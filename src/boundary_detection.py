@@ -8,10 +8,12 @@ this wrong does not make the solve fail; it makes it answer a different
 question, which is far more dangerous. Every detected face therefore has its
 area compared against a hand calculation.
 
-Boundary condition, engineering decision 4: the entire rear face of the
-mounting plate (x = 0) is fully fixed. The holes carry no load in this model -
-they are simply absent from the fixed face - and that limitation is stated in
-the report.
+Boundary condition, engineering decision 4: the plate is held only where its
+bolts clamp it - a washer-sized annulus around each hole, on the rear face at
+x = 0. The rest of the rear face is free to lift and rotate. The holes now
+carry the load, which is the point of the change, but the price is a restraint
+singularity at the edge of each annulus: the stress there rises without limit
+as the mesh is refined, so it is reported and never validated against.
 
 Load faces, matching the load cases in engineering decision 1:
     tip_load - the end face of the arm at x = t + L
@@ -23,6 +25,7 @@ Both loads act downwards, in -z.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -49,6 +52,36 @@ PLANE_TOL = 1e-6
 # 0.2% at 6 mm elements, and far less at the 1.5 mm baseline. A tolerance tight
 # enough to trip on it would raise a false alarm on every coarse mesh.
 AREA_REL_TOL = 1e-2
+
+# The clamped annuli get their own tolerance, for a reason worth stating
+# rather than quietly widening the one above.
+#
+# The load and rear faces are bounded by real CAD edges, so the mesh lands on
+# them exactly and the only error is hole faceting, which falls away with the
+# square of element size. An annulus is not a CAD feature: it is a region
+# selected out of a flat face, so its boundary can only follow whole element
+# faces. Selecting by face centroid makes that error UNBIASED - faces
+# straddling the edge are taken and dropped in roughly equal measure - so it
+# cancels rather than accumulating, but it also does not fall monotonically
+# with refinement. Measured on the baseline ring (4 mm wide, hole 9, washer 17):
+#
+#   2.00 mm  +1.49%      1.25 mm  +1.12%      0.75 mm  +0.07%
+#   1.50 mm  +0.10%      1.00 mm  +0.04%
+#
+# The scatter also grows sharply once the ring is thinner than about two
+# elements: a 3 mm mesh across the same 4 mm ring measures 9.13% out. That is
+# the mesh failing to resolve the restraint, not the selection failing to find
+# it, and BracketInputs.warnings() flags it in its own right.
+#
+# So the threshold is set from what this check exists to catch, which is the
+# WRONG REGION, not a few percent of ragged edge. Selecting the whole rear face
+# instead of the annuli reads 5745 mm^2 against 653 mm^2 - an error of 780%,
+# fifty times this tolerance. Dropping the annuli to the hole radius would read
+# zero. A first attempt at 5% was set from the 0.10% the baseline happens to
+# achieve, which is the habit this project avoids everywhere else; it also
+# turned an under-resolved coarse mesh into a face-detection failure, which is
+# the wrong diagnosis to hand a reader.
+ANNULUS_AREA_REL_TOL = 0.15
 
 # Downward, matching the sign convention of the analytical formulas.
 LOAD_DIRECTION = np.array([0.0, 0.0, -1.0])
@@ -83,6 +116,7 @@ def _faces_on_plane(
     value: float,
     tol: float = PLANE_TOL,
     name: str = "face",
+    keep: Callable[[np.ndarray], np.ndarray] | None = None,
 ) -> FaceSelection:
     """Every element face lying in the plane `coordinate[axis] == value`.
 
@@ -93,6 +127,12 @@ def _faces_on_plane(
     Selecting by "which nodes are in the plane" rather than by a hard-coded
     face-numbering table keeps this independent of element node ordering, which
     differs between Gmsh, VTK and Abaqus conventions.
+
+    `keep` optionally narrows the result to part of the plane. It is given the
+    face centroids and returns a boolean mask. Centroids rather than nodes:
+    a face is either in the region or out of it, so the selected patch tracks
+    the intended boundary instead of growing by "any node inside" or shrinking
+    by "every node inside".
     """
     coordinate = mesh.points[:, axis]
     on_plane = np.abs(coordinate - value) <= tol
@@ -124,6 +164,21 @@ def _faces_on_plane(
         dtype=np.int64,
     )
 
+    if keep is not None:
+        centroids = mesh.points[corner_triangles].mean(axis=1)
+        mask = np.asarray(keep(centroids), dtype=bool)
+        corner_triangles = corner_triangles[mask]
+        midside_triangles = midside_triangles[mask]
+
+        if corner_triangles.shape[0] == 0:
+            return FaceSelection(
+                name=name,
+                node_indices=np.empty(0, dtype=np.int64),
+                corner_triangles=np.empty((0, 3), dtype=np.int64),
+                midside_triangles=np.empty((0, 3), dtype=np.int64),
+                areas=np.empty(0),
+            )
+
     areas = _triangle_areas(mesh.points, corner_triangles)
     node_indices = np.unique(
         np.concatenate([corner_triangles.ravel(), midside_triangles.ravel()])
@@ -151,9 +206,39 @@ def _triangle_areas(points: np.ndarray, triangles: np.ndarray) -> np.ndarray:
     return 0.5 * np.linalg.norm(np.cross(b - a, c - a), axis=1)
 
 
+def in_washer_annuli(inputs: BracketInputs) -> Callable[[np.ndarray], np.ndarray]:
+    """Predicate for points lying under a washer, in the plane of the rear face.
+
+    Distance is measured in (y, z) to the nearest hole centre, so a point is
+    kept when it sits in the ring between the hole edge and the washer edge.
+    """
+    centres = np.asarray(inputs.hole_centres(), dtype=float)  # (n_holes, 2) as (y, z)
+    inner = inputs.hole_diameter / 2.0
+    outer = inputs.washer_diameter / 2.0
+
+    def predicate(points: np.ndarray) -> np.ndarray:
+        offsets = points[:, None, 1:] - centres[None, :, :]
+        nearest = np.linalg.norm(offsets, axis=2).min(axis=1)
+        return (nearest >= inner) & (nearest <= outer)
+
+    return predicate
+
+
 def detect_fixed_face(mesh: MeshData, inputs: BracketInputs) -> FaceSelection:
-    """The rear face of the mounting plate, at x = 0."""
-    return _faces_on_plane(mesh, axis=0, value=0.0, name="fixed face (x = 0)")
+    """The clamped annuli under the washers, on the rear face at x = 0.
+
+    The bolts hold the plate only where their washers press on it, so only
+    that material is restrained. Everything else on the rear face is free to
+    lift and rotate, which is what lets the plate carry load through the holes
+    at all.
+    """
+    return _faces_on_plane(
+        mesh,
+        axis=0,
+        value=0.0,
+        name="washer annuli (x = 0)",
+        keep=in_washer_annuli(inputs),
+    )
 
 
 def detect_load_face(mesh: MeshData, inputs: BracketInputs) -> FaceSelection:
@@ -161,7 +246,7 @@ def detect_load_face(mesh: MeshData, inputs: BracketInputs) -> FaceSelection:
 
     For `udl` this is the flat top of the arm. Note that the flat top starts at
     x = t + r, where the fillet becomes tangent, so the loaded length is L - r
-    rather than L. The analytical comparison must account for that against the
+    rather than L. The analytical reference must account for that when
     closed-form UDL result, which assumes the load runs the full length L.
     """
     if inputs.load_case is LoadCase.TIP_LOAD:
@@ -181,9 +266,8 @@ def detect_load_face(mesh: MeshData, inputs: BracketInputs) -> FaceSelection:
 
 
 def expected_fixed_area(inputs: BracketInputs) -> float:
-    """b*H less the holes, which pass right through the plate."""
-    hole_area = inputs.num_holes * math.pi * (inputs.hole_diameter / 2.0) ** 2
-    return inputs.width * inputs.plate_height - hole_area
+    """One washer annulus per hole: n * pi * (R^2 - r^2)."""
+    return inputs.clamped_area
 
 
 def expected_load_area(inputs: BracketInputs) -> float:
@@ -336,7 +420,9 @@ def run_boundary_checks(
 ) -> list[CheckResult]:
     """Every boundary check, in order."""
     return [
-        check_face_area(fixed, expected_fixed_area(inputs)),
+        check_face_area(
+            fixed, expected_fixed_area(inputs), rel_tol=ANNULUS_AREA_REL_TOL
+        ),
         check_face_area(load, expected_load_area(inputs)),
         check_applied_load(forces, inputs.applied_load),
     ]

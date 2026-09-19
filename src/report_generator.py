@@ -3,13 +3,15 @@
 Units: mm, N, MPa (N/mm^2), tonne/mm^3, mass in kg. Stated in the report
 itself, because a number without its units is not a result.
 
-Images are embedded as base64 rather than linked, so the report is a single
-file that survives being emailed or archived without its run folder. A report
-whose pictures have quietly gone missing is worse than one with none.
+Images are embedded as base64 rather than linked. The report is then a single
+file that can be emailed, archived or opened years later without the run folder
+beside it; a report whose pictures have gone missing is worse than one with no
+pictures, because the gaps are silent.
 
-It states what was checked, what was assumed and what is out of scope. A report
-that looks authoritative while hiding its assumptions is the failure mode worth
-designing against.
+The report states plainly what was checked, what was assumed and what is out of
+scope. This is never presented as a certified tool, and a report that
+looks authoritative while hiding its assumptions is exactly the failure mode
+worth designing against.
 """
 
 from __future__ import annotations
@@ -36,8 +38,14 @@ VERDICT_CLASS = {
 LIMITATIONS = [
     "Results require independent engineering verification.",
     "Linear elastic material behaviour is assumed; no plasticity.",
-    "Loads and restraints are simplified. The entire rear face of the plate is "
-    "fully fixed, so the mounting holes carry no load in this model.",
+    "Loads and restraints are simplified. The plate is held only under its "
+    "washers, which is closer to a bolted joint than a fully fixed rear face, "
+    "but it is still an idealisation: the clamp is rigid, with no bolt "
+    "preload, no friction and no contact.",
+    "Restraining a sharp-edged ring produces a stress singularity at the edge "
+    "of each washer. That peak rises without limit as the mesh is refined, so "
+    "it is reported but never used for the verdict; the factor of safety uses "
+    "the highest stress outside that zone.",
     "Contact, bolt preload, fatigue, fracture, thermal loads, manufacturing "
     "tolerances and certification are outside the scope of this version.",
     "The peak stress sits in the fillet stress concentration and is mesh "

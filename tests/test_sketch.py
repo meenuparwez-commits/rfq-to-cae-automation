@@ -2,9 +2,9 @@
 
 The sketch is an interface aid, so the things worth asserting are that it
 says what the inputs say, that it is well formed, and that nothing lands
-outside the canvas when the proportions are pushed around. Two of the worst
-faults in the manufacturing drawing were invisible text and geometry that had
-run off the sheet, and neither would have been caught by "the file exists".
+outside the canvas when the proportions are pushed around. Two of the three
+faults in the manufacturing drawing were invisible text and geometry that
+had run off the sheet, and neither would have been caught by "the file exists".
 """
 
 from __future__ import annotations
@@ -27,6 +27,7 @@ BASELINE = dict(
     hole_diameter=9.0,
     hole_spacing=30.0,
     num_holes=4,
+    washer_diameter=17.0,
     material="structural_steel_s275",
     applied_load=250.0,
     load_case="tip_load",
@@ -122,13 +123,35 @@ def test_footer_says_the_sketch_is_not_the_checked_drawing():
 # -- Holes ----------------------------------------------------------------
 
 
+def _circles(svg: str, fill: str) -> list[ElementTree.Element]:
+    return [node for node in parse(svg).iter(f"{SVG_NS}circle")
+            if node.get("fill") == fill]
+
+
 @pytest.mark.parametrize("count", [2, 4])
 def test_hole_count_is_drawn(count):
     svg = sketch_svg(make(num_holes=count))
-    circles = list(parse(svg).iter(f"{SVG_NS}circle"))
 
-    assert len(circles) == count
+    assert len(_circles(svg, "#ffffff")) == count
     assert f"{count} ×" in " | ".join(texts(svg))
+
+
+@pytest.mark.parametrize("count", [2, 4])
+def test_clamped_ring_is_drawn_around_every_hole(count):
+    """The washer annuli are the entire restraint, so they have to be on the
+    sketch. A drawing that showed only the holes would leave the reader to
+    assume the whole rear face is held, which is what the model used to do."""
+    svg = sketch_svg(make(num_holes=count))
+
+    assert len(_circles(svg, "#d8ecdf")) == count
+    assert "clamped Ø17" in " | ".join(texts(svg))
+
+
+def test_clamped_ring_follows_the_washer_input():
+    small = _circles(sketch_svg(make(washer_diameter=13.0)), "#d8ecdf")
+    large = _circles(sketch_svg(make(washer_diameter=20.0)), "#d8ecdf")
+
+    assert float(large[0].get("r")) > float(small[0].get("r"))
 
 
 def test_hole_positions_match_the_schema():
@@ -194,26 +217,52 @@ def test_udl_symbols_start_where_the_flat_top_of_the_arm_starts():
     assert left_large > left_small
 
 
-def test_fixed_face_symbol_is_drawn():
-    svg = sketch_svg(make())
+def test_restraint_symbol_covers_only_the_washer_bands():
+    """The hatching has to stop where the clamping stops.
+
+    A ground symbol down the whole rear face would state the opposite of the
+    boundary condition, and the restraint is the assumption a reader most
+    needs to get right.
+    """
+    inputs = make()
+    svg = sketch_svg(inputs)
+
     green = [node for node in parse(svg).iter(f"{SVG_NS}line")
              if node.get("stroke") == "#2f7d4f"]
+    assert len(green) > 3  # face lines plus hatching
 
-    assert len(green) > 3  # the face line plus hatching
-    assert "rear face fully fixed" in " | ".join(texts(svg))
+    ys = [float(node.get(key)) for node in green for key in ("y1", "y2")]
+    plate_top, plate_bottom = _plate_span(svg)
+    covered = (max(ys) - min(ys)) / (plate_bottom - plate_top)
+
+    # Two bands of one washer each, 30 mm apart on a 100 mm plate: well under
+    # half the height. The old full-face restraint would give 1.0.
+    assert covered < 0.6
+    assert "held under the washers only" in " | ".join(texts(svg))
+
+
+def _plate_span(svg: str) -> tuple[float, float]:
+    plate = next(node for node in parse(svg).iter(f"{SVG_NS}rect")
+                 if node.get("rx") is None)
+    top = float(plate.get("y"))
+    return top, top + float(plate.get("height"))
 
 
 # -- Layout ---------------------------------------------------------------
 
 
+# Washer diameters here are sized to each geometry rather than left at the
+# baseline 17 mm: a washer that runs off the plate is a validation error, and
+# these cases exist to stress the layout, not the schema.
 EXTREMES = [
     dict(),
     dict(plate_height=300.0, arm_length=10.0),
     dict(arm_length=250.0, plate_height=40.0, hole_spacing=20.0,
-         hole_diameter=6.0),
+         hole_diameter=6.0, washer_diameter=10.0),
     dict(thickness=12.0, fillet_radius=10.0),
-    dict(width=200.0, hole_spacing=80.0),
-    dict(width=25.0, hole_spacing=12.0, hole_diameter=5.0),
+    dict(width=200.0, hole_spacing=80.0, washer_diameter=11.0),
+    dict(width=25.0, hole_spacing=12.0, hole_diameter=5.0,
+         washer_diameter=9.0),
     dict(num_holes=2, load_case="udl"),
 ]
 

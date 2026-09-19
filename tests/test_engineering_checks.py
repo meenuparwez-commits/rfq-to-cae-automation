@@ -38,10 +38,19 @@ def make_summary(
     section_stress: float | None = None,
     peak_stress: float = 260.435,
     reactions: tuple[float, float, float] | None = None,
-    peak_location: tuple[float, float, float] = (8.35, 2.62, 4.04),
+    peak_location: tuple[float, float, float] = (0.0, -15.49, 29.85),
+    structural_stress: float | None = None,
+    structural_location: tuple[float, float, float] = (8.35, 2.62, 4.04),
     yield_strength: float = 275.0,
 ) -> engineering_checks.ResultSummary:
-    """A summary built from chosen numbers, so each check can be steered."""
+    """A summary built from chosen numbers, so each check can be steered.
+
+    The defaults describe the shape of a real run under the bolted restraint:
+    the raw peak sits at a clamped edge, and the structural peak - the one the
+    verdict uses - sits in the fillet.
+    """
+    if structural_stress is None:
+        structural_stress = peak_stress
     if tip_deflection is None:
         tip_deflection = reference.tip_deflection_plate * 1.02
     if section_stress is None:
@@ -64,9 +73,13 @@ def make_summary(
         peak_location=peak_location,
         section=section,
         reactions=np.asarray(reactions),
-        stress_concentration=peak_stress / reference.root_stress,
+        stress_concentration=structural_stress / reference.root_stress,
         factor_of_safety_peak=yield_strength / peak_stress,
         factor_of_safety_section=yield_strength / abs(section_stress),
+        max_von_mises_structural=structural_stress,
+        structural_location=structural_location,
+        factor_of_safety_structural=yield_strength / structural_stress,
+        restraint_zone=4.0,
     )
 
 
@@ -104,7 +117,7 @@ def test_equilibrium_fails_on_a_large_lateral_reaction():
 
 
 def test_equilibrium_tolerance_is_one_percent():
-    """1%, though the solve does far better."""
+    """The agreed tolerance is ~1%."""
     assert engineering_checks.EQUILIBRIUM_REL_TOL == pytest.approx(0.01)
 
     just_inside = np.asarray([0.0, 0.0, APPLIED_LOAD * 1.009])
@@ -117,42 +130,56 @@ def test_equilibrium_tolerance_is_one_percent():
 # --- Tip deflection -------------------------------------------------------
 
 
-def test_deflection_between_the_bounds_passes(reference):
-    """Engineering decision 3: expected between plate and beam values."""
-    midpoint = (
-        reference.tip_deflection_plate + reference.tip_deflection_beam
-    ) / 2.0
-    summary = make_summary(reference, tip_deflection=midpoint)
+def test_deflection_above_the_rigid_root_bound_passes(reference):
+    """Engineering decision 3, restated for the bolted restraint.
 
-    result = engineering_checks.check_tip_deflection(summary.tip_deflection, reference)
-
-    assert result.passed
-    assert "between the bounds" in result.message
-
-
-def test_a_far_too_stiff_result_fails(reference):
-    """Half the expected deflection means the model is twice as stiff.
-
-    The classic symptom of a locked mesh or an over-constrained restraint.
+    Both closed forms assume a rigid wall. The bracket is held by four washer
+    rings on a 4 mm plate, so it can only be MORE flexible. Sitting above the
+    bound is the expected result, not a deviation to be explained away.
     """
-    summary = make_summary(
-        reference, tip_deflection=reference.tip_deflection_plate * 0.5
-    )
-
-    result = engineering_checks.check_tip_deflection(summary.tip_deflection, reference)
-
-    assert not result.passed
-    assert "outside the accepted band" in result.message
-
-
-def test_a_far_too_flexible_result_fails(reference):
     summary = make_summary(
         reference, tip_deflection=reference.tip_deflection_beam * 2.0
     )
 
     result = engineering_checks.check_tip_deflection(summary.tip_deflection, reference)
 
+    assert result.passed
+    assert "rigid-root bounds" in result.message
+    assert "flexing between its bolts" in result.message
+
+
+def test_a_result_stiffer_than_a_rigid_wall_fails(reference):
+    """The one thing that cannot happen physically.
+
+    A support adds compliance; it never removes it. A tip deflection below the
+    rigid-root value therefore has a single explanation - the model is held
+    more tightly than the bracket is - which is exactly the failure a restraint
+    change is most likely to introduce.
+    """
+    stiffest = min(reference.tip_deflection_plate, reference.tip_deflection_beam)
+    summary = make_summary(reference, tip_deflection=stiffest * 0.5)
+
+    result = engineering_checks.check_tip_deflection(summary.tip_deflection, reference)
+
     assert not result.passed
+    assert "over-restrained" in result.message
+
+
+def test_a_very_flexible_result_still_passes_the_lower_bound(reference):
+    """Deliberate: the check is one-sided.
+
+    How far above the bound the result sits is base flexibility, which is a
+    property of the design rather than an error, so it is reported as a
+    compliance ratio instead of being bounded by a number nobody can justify.
+    """
+    summary = make_summary(
+        reference, tip_deflection=reference.tip_deflection_beam * 5.0
+    )
+
+    result = engineering_checks.check_tip_deflection(summary.tip_deflection, reference)
+
+    assert result.passed
+    assert "FE/beam 5.0000" in result.message
 
 
 def test_the_plate_bound_is_the_lower_deflection(reference):
@@ -255,13 +282,39 @@ def test_factor_of_safety_fails_below_the_target_and_suggests_remedies(reference
     assert "increase the thickness" in result.message
 
 
-def test_both_factors_of_safety_are_reported(reference):
-    """Both the peak and the away-from-root factor of safety are reported."""
-    summary = make_summary(reference, peak_stress=260.435)
+def test_every_factor_of_safety_is_reported(reference):
+    """The number that was set aside has to stay visible.
+
+    The verdict runs on the structural peak, but a reader has to be able to
+    see the raw peak at the clamped edge and disagree with the judgement.
+    Quietly dropping it would be the difference between an argued choice and
+    a hidden one.
+    """
+    summary = make_summary(
+        reference, peak_stress=273.593, structural_stress=138.764
+    )
 
     result = engineering_checks.check_factor_of_safety(summary, TARGET_FOS)
 
-    assert "Away from the root" in result.message
+    assert "structural peak 138.764" in result.message
+    assert "Raw peak FoS" in result.message
+    assert "restraint singularity" in result.message
+    assert "away from the root" in result.message
+
+
+def test_the_verdict_uses_the_structural_peak_not_the_clamp_singularity(reference):
+    """A design that only fails at the clamped edge must not be failed for it.
+
+    That stress climbs with every refinement, so a verdict driven by it would
+    change every time the mesh did.
+    """
+    summary = make_summary(
+        reference, peak_stress=1000.0, structural_stress=100.0
+    )
+
+    result = engineering_checks.check_factor_of_safety(summary, TARGET_FOS)
+
+    assert result.passed  # 275 / 100 = 2.75, despite the raw peak at 0.275
 
 
 # --- The suite ------------------------------------------------------------
@@ -279,7 +332,7 @@ def test_run_result_checks_covers_the_expected_checks(reference):
 
     assert names == [
         "Equilibrium",
-        "Tip deflection vs beam theory",
+        "Tip deflection vs rigid-root bound",
         "Bending stress away from the root",
         "Stress concentration K_t",
         "Factor of safety",

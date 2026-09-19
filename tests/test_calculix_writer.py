@@ -78,12 +78,17 @@ def test_units_are_stated_in_the_header(deck):
     assert "mm, N, MPa" in header
 
 
-def test_header_records_the_restraint_limitation(deck):
-    """The holes carry no load under decision 4; that must be written down."""
-    _, lines = deck
-    header = "\n".join(lines[:12])
+def test_header_records_the_restraint_and_its_cost(deck):
+    """Decision 4 and the price it carries, both written into the deck.
 
-    assert "holes therefore carry no load" in header
+    Anyone opening the .inp on its own should be able to see what was held,
+    and why the peak stress in the results cannot be taken at face value.
+    """
+    _, lines = deck
+    header = "\n".join(lines[:14])
+
+    assert "washer annuli" in header
+    assert "stress singularity" in header
 
 
 def test_node_block_has_one_line_per_node(deck, model):

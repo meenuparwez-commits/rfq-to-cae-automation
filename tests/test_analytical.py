@@ -3,8 +3,7 @@
 Units: mm, N, MPa.
 
 This module is the reference the FE result is judged against, so it is checked
-against the formulas in docs/engineering-notes.md rather than against
-itself. If
+against formulas agreed up front rather than against itself. If
 these are wrong, every validation in the project is wrong in the same
 direction and nothing would notice.
 """
@@ -49,7 +48,7 @@ def test_non_positive_section_is_rejected(bad):
         analytical.bending_stress(1000.0, B, bad)
 
 
-# --- Tip load -------------------------------------------------------------
+# --- Tip load, against the agreed formulas -------------------------------
 
 
 def test_tip_load_root_moment_and_stress():
@@ -80,7 +79,7 @@ def test_tip_load_deflection():
     ) == pytest.approx(F * L**3 / (3 * E * I))
 
 
-# --- UDL over the full length ---------------------------------------------
+# --- UDL over the full length --------------------------------------------
 
 
 def test_full_udl_root_moment_and_stress():
@@ -121,7 +120,7 @@ def test_partial_udl_root_moment():
 def test_partial_udl_raises_the_root_moment_measurably():
     """On the baseline geometry the shift is 6.25%: not negligible.
 
-    Ignoring the shortened load face would look exactly
+    This is the difference the load-face work flagged. Ignoring it would look
     like a 6% FE error.
     """
     c = 5.0
@@ -211,25 +210,25 @@ def inputs() -> BracketInputs:
 
 
 def test_reference_matches_hand_values_for_the_baseline(inputs):
-    """Hand calculation for the shipped baseline: 250 N tip load, b60 t4 L80.
+    """Hand calculation for the shipped baseline: 220 N tip load, b60 t4 L80.
 
-        I         = 60 * 4^3 / 12                 = 320 mm^4
-        M_root    = F L = 250 * 80                = 20000 N.mm
-        sigma_root= 6 M / (b t^2) = 120000 / 960  = 125 MPa
-        M at s=L/2 = F L / 2                      = 10000 N.mm
-        sigma      = 62.5 MPa
+        I          = 60 * 4^3 / 12                = 320 mm^4
+        M_root     = F L = 220 * 80               = 17600 N.mm
+        sigma_root = 6 M / (b t^2) = 105600 / 960 = 110 MPa
+        M at s=L/2 = F L / 2                      = 8800 N.mm
+        sigma      = 55 MPa
     """
-    assert inputs.applied_load == pytest.approx(250.0), (
+    assert inputs.applied_load == pytest.approx(220.0), (
         "The baseline load changed; the hand values below must change with it."
     )
 
     reference = analytical.compute_reference(inputs, inputs.resolved_material(), 0.0)
 
     assert reference.second_moment == pytest.approx(320.0)
-    assert reference.root_moment == pytest.approx(20000.0)
-    assert reference.root_stress == pytest.approx(125.0)
+    assert reference.root_moment == pytest.approx(17600.0)
+    assert reference.root_stress == pytest.approx(110.0)
     assert reference.section_position == pytest.approx(40.0)
-    assert reference.section_stress == pytest.approx(62.5)
+    assert reference.section_stress == pytest.approx(55.0)
 
 
 def test_reference_defaults_the_section_to_mid_span(inputs):

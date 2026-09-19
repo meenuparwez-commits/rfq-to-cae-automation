@@ -16,8 +16,8 @@ Two severities, deliberately kept apart:
 Collapsing the two would either block valid designs or hide real problems.
 
 Safety-critical inputs (dimensions, material, load, load case, mesh size,
-target factor of safety) have no defaults on purpose. A missing load must fail
-loudly, not quietly become zero.
+target factor of safety) have no defaults on purpose. Silently
+defaulting them: a missing load must fail loudly, not quietly become zero.
 """
 
 from __future__ import annotations
@@ -40,6 +40,12 @@ MIN_LIGAMENT_RATIO = 1.0
 # Slenderness below which engineer's beam theory becomes a poor reference,
 # because shear deflection and end effects stop being negligible.
 MIN_SLENDERNESS_RATIO = 10.0
+
+# Elements wanted across the width of the clamped washer ring. The restraint is
+# selected from whole element faces, so a ring narrower than this is reproduced
+# coarsely and its area scatters. Same reasoning as the elements-through-
+# thickness rule: the mesh has to resolve the feature that sets the answer.
+MIN_RING_ELEMENTS = 2.0
 
 # Working rule from engineering decision 5: at least 2 elements through the
 # thickness means an element no larger than half the thickness.
@@ -149,6 +155,12 @@ class BracketInputs(BaseModel):
         "also vertically when there are 4 holes (square pattern).",
     )
     num_holes: Literal[2, 4]
+    washer_diameter: float = Field(
+        gt=0.0,
+        description="Outside diameter of the clamped annulus around each hole, "
+        "mm. This is the restrained area: the bolts hold the plate only under "
+        "their washers, not over the whole rear face.",
+    )
 
     # --- Analysis -------------------------------------------------------
     material: str = Field(min_length=1, description="Key into config/materials.json")
@@ -177,9 +189,9 @@ class BracketInputs(BaseModel):
     def hole_centres(self) -> list[tuple[float, float]]:
         """Hole centres as (y, z) pairs, in mm.
 
-        There is a hole spacing input but no hole height, so the pattern is
-        centred in the band between the top of the fillet and the top of the
-        plate. Derived rather than invented as a hidden default.
+        The pattern is centred in the band between the top of the fillet and
+        the top of the plate. There is a hole spacing input but no hole height, so
+        position is derived rather than invented as a hidden default.
         """
         half_spacing = self.hole_spacing / 2.0
         y_positions = (-half_spacing, half_spacing)
@@ -204,6 +216,17 @@ class BracketInputs(BaseModel):
         radius = self.hole_diameter / 2.0
         return self.num_holes * math.pi * radius**2 * self.thickness
 
+    @property
+    def clamped_area(self) -> float:
+        """Total restrained area: one washer annulus per hole, mm^2.
+
+        This is the whole restraint in V2. It replaces b*H less the holes, and
+        on the shipped baseline it is roughly a ninth of that.
+        """
+        outer = self.washer_diameter / 2.0
+        inner = self.hole_diameter / 2.0
+        return self.num_holes * math.pi * (outer**2 - inner**2)
+
     # -- Cross-field validation -------------------------------------------
 
     @model_validator(mode="after")
@@ -211,6 +234,7 @@ class BracketInputs(BaseModel):
         errors: list[str] = []
         errors.extend(self._fillet_errors())
         errors.extend(self._hole_errors())
+        errors.extend(self._washer_errors())
 
         if errors:
             raise ValueError(
@@ -286,6 +310,58 @@ class BracketInputs(BaseModel):
 
         return problems
 
+    def _washer_errors(self) -> list[str]:
+        """The clamped annuli are the restraint, so their geometry must close.
+
+        An annulus that overlaps its neighbour or runs off the plate would
+        restrain material that no bolt actually holds, which is a silently
+        wrong model rather than a visible failure.
+        """
+        problems = []
+        outer = self.washer_diameter / 2.0
+
+        if self.washer_diameter <= self.hole_diameter:
+            problems.append(
+                f"washer_diameter ({self.washer_diameter} mm) must be greater "
+                f"than hole_diameter ({self.hole_diameter} mm); there would be "
+                "no clamped ring left to restrain."
+            )
+
+        if self.washer_diameter > self.hole_spacing:
+            problems.append(
+                f"washer_diameter ({self.washer_diameter} mm) exceeds "
+                f"hole_spacing ({self.hole_spacing} mm); neighbouring washers "
+                "would overlap and the restrained area would be counted twice."
+            )
+
+        half_width = self.width / 2.0
+        if self.hole_spacing / 2.0 + outer > half_width:
+            problems.append(
+                f"the washers reach y = {self.hole_spacing / 2.0 + outer:.3f} mm "
+                f"but the plate edge is at {half_width:.3f} mm (width / 2); part "
+                "of the clamped ring would hang off the side of the plate."
+            )
+
+        centres = self.hole_centres()
+        highest = max(z for _, z in centres)
+        lowest = min(z for _, z in centres)
+
+        if highest + outer > self.plate_height:
+            problems.append(
+                f"the top washers reach z = {highest + outer:.3f} mm but the "
+                f"plate ends at {self.plate_height:.3f} mm; part of the clamped "
+                "ring would hang off the top of the plate."
+            )
+
+        if lowest - outer < 0.0:
+            problems.append(
+                f"the bottom washers reach z = {lowest - outer:.3f} mm but the "
+                "plate starts at 0.000 mm; part of the clamped ring would hang "
+                "off the bottom of the plate."
+            )
+
+        return problems
+
     # -- Advisory checks ---------------------------------------------------
 
     def warnings(self) -> list[str]:
@@ -318,6 +394,27 @@ class BracketInputs(BaseModel):
                 f"{MIN_EDGE_DISTANCE_RATIO} x diameter guideline "
                 f"({min_edge_distance:.2f} mm). Holes close to the highest-stressed "
                 "region raise the stress concentration."
+            )
+
+        washer_outer = self.washer_diameter / 2.0
+        if min(z for _, z in centres) - washer_outer < self.hole_band_bottom:
+            notes.append(
+                f"The bottom washers reach z = "
+                f"{min(z for _, z in centres) - washer_outer:.2f} mm, into the "
+                f"root region below z = {self.hole_band_bottom:.2f} mm. "
+                "Restraining material where the bending moment is highest "
+                "stiffens the model and moves the restraint singularity towards "
+                "the fillet, making the two harder to tell apart."
+            )
+
+        ring_width = (self.washer_diameter - self.hole_diameter) / 2.0
+        if ring_width < MIN_RING_ELEMENTS * self.mesh_size:
+            notes.append(
+                f"The clamped ring is {ring_width:.2f} mm wide, under "
+                f"{MIN_RING_ELEMENTS} elements across at a mesh size of "
+                f"{self.mesh_size:.2f} mm. The restrained area is selected from "
+                "whole element faces, so a ring this narrow is reproduced "
+                "coarsely and its area can scatter by several percent."
             )
 
         ligament = self.hole_spacing - self.hole_diameter

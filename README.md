@@ -32,8 +32,8 @@ inputs → validate → CAD → drawing → mesh → boundary conditions
 ```
 
 Every stage checks its own output against something computed **independently**:
-the CAD volume against a closed-form hand calculation, the detected face areas
-against `b·H − holes`, the deflection against beam theory, the drawing's
+the CAD volume against a closed-form hand calculation, the clamped area
+against `n·π(R²−r²)`, the deflection against beam theory, the drawing's
 dimensions against the projected geometry.
 
 | | |
@@ -44,33 +44,33 @@ dimensions against the projected geometry.
 | **Solver** | CalculiX, linear static |
 | **Interface** | Streamlit |
 | **Report** | Self-contained HTML, images embedded |
-| **Tests** | 415, one file per module |
+| **Tests** | 420, one file per module |
 
 ![Dimensioned sketch of the input parameters](docs/images/inputs-sketch.svg)
 
 *The app redraws this from the sidebar as you type, so the parameters are not
 just names in a form: L is the free length from the front face of the plate
 rather than the overall extent, the holes have to sit in the band above the
-fillet, and the whole rear face is fixed. It is a schematic drawn from the
-input numbers — the manufacturing drawing below is generated from the solid
-itself.*
+fillet, and the green rings show what is actually restrained — the plate is
+held only under its washers. It is a schematic drawn from the input numbers;
+the manufacturing drawing below is generated from the solid itself.*
 
 ## Results on the shipped baseline
 
-H 100 × L 80 × b 60 × t 4 mm, r 5 fillet, 4 × ⌀9 holes, S275 steel, 250 N tip
-load, 1.5 mm mesh. 108,160 nodes, 62,886 elements, 286,695 equations, about a
-minute end to end.
+H 100 × L 80 × b 60 × t 4 mm, r 5 fillet, 4 × ⌀9 holes clamped under ⌀17
+washers, S275 steel, 220 N tip load, 1.5 mm mesh. 108,160 nodes, 62,886
+elements, 319,398 equations, about a minute end to end.
 
 | Check | Result |
 |---|---|
 | CAD volume vs hand calculation | 42,504.0267 mm³, **zero** relative error |
-| Equilibrium | reactions return 250.000000 N |
-| Tip deflection | 0.58754 mm, **between** the plate (0.57778) and beam (0.63492) bounds |
-| Bending stress at mid-span | 62.413 vs 62.500 MPa — **0.14%** |
-| Mesh convergence | settled to **0.04%** between the two finest meshes |
-| Stress concentration | K_t = 1.042, peak in the fillet |
-| Factor of safety | **2.112** against a target of 2.0 |
-| **Verdict** | **Pass** — 21 checks |
+| Equilibrium | reactions return 220.000000 N |
+| Tip deflection | 1.10706 mm — **1.98×** the rigid-root floor, which is real base flexibility |
+| Bending stress at mid-span | 54.923 vs 55.000 MPa — **0.14%** |
+| Mesh convergence | settled to **0.17%** between the two finest meshes |
+| Stress concentration | K_t = 1.110, peak in the fillet |
+| Factor of safety | **2.252** against a target of 2.0 |
+| **Verdict** | **Pass** — 22 checks |
 
 ![Von Mises stress](docs/images/stress.png)
 
@@ -155,15 +155,25 @@ model, where the stress still looks right.
 
 ### Do not validate against the peak stress
 
-The peak sits in the fillet stress concentration, where the stress rises
-without limit as the mesh is refined. The convergence study shows exactly that:
-between 1.5 mm and 1.25 mm elements the tip deflection settles to 0.04% while
-the peak is still climbing 1% per refinement.
+There are two peaks that misbehave, and the convergence study separates them
+rather than lumping them together as "the peak":
 
-Validation therefore uses the tip deflection and a bending stress away from the
-root — both of which converge. The peak is reported separately as K_t, with its
-location, so a peak on the edge of the fixed face can be recognised as a
-restraint singularity rather than a real feature.
+| mesh | tip deflection | section stress | fillet peak | clamp peak |
+|---|---|---|---|---|
+| 2.00 mm | 1.10215 | 55.021 | 118.807 | 214.159 |
+| 1.50 mm | 1.10706 | 54.923 | 122.113 | 240.762 |
+| 1.25 mm | 1.10517 **0.17%** | 55.043 **0.22%** | 122.652 *0.44%* | 284.685 **+18.24%** |
+
+Deflection and section stress settle, and validation uses those. The fillet
+peak is a real stress concentration and does converge, just slowly. The peak at
+the edge of a clamped washer ring **diverges, and accelerates** — restraining a
+sharp-edged region of a continuum has no finite answer to converge to, so
+refining the mesh makes that number worse for ever.
+
+A verdict driven by it would change every time the mesh changed. The factor of
+safety therefore uses the highest stress outside one plate thickness of the
+clamped edge, which is where the disturbance measurably dies away. The raw peak
+is still reported, so the number that was set aside stays visible.
 
 ### Tolerances come from what must be detected
 
@@ -190,10 +200,11 @@ to make the default pass.
 
 ## Limitations in brief
 
-Linear elasticity. Small displacements. Static loading. The entire rear face is
-fixed, so **the mounting holes carry no load in this model**. No contact, bolt
-preload, fatigue, fracture, thermal loads, manufacturing tolerances or
-certification. The drawing carries no tolerances or GD&T and is stamped
+Linear elasticity. Small displacements. Static loading. The plate is held only
+under its washers — closer to a bolted joint than a fully fixed face, but still
+a rigid clamp with **no bolt preload, no friction and no contact**, and it
+brings a **stress singularity at the edge of every clamped ring**. No fatigue,
+fracture, thermal loads, manufacturing tolerances or certification. The drawing carries no tolerances or GD&T and is stamped
 `EDUCATIONAL DEMONSTRATOR - NOT FOR MANUFACTURE`.
 
 Full detail in [docs/limitations.md](docs/limitations.md).

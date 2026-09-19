@@ -94,6 +94,14 @@ def sidebar_inputs(preset: dict) -> dict:
             options=[2, 4],
             index=[2, 4].index(int(preset["num_holes"])),
         ),
+        "washer_diameter": st.sidebar.number_input(
+            "Washer diameter (clamped ring)",
+            value=float(preset["washer_diameter"]),
+            step=1.0,
+            help="The bolts hold the plate only under their washers. This "
+            "outside diameter is the whole restraint, so it changes the "
+            "stiffness and the stresses, not just the drawing.",
+        ),
     }
 
     st.sidebar.header("Load and material")
@@ -146,13 +154,15 @@ def show_sketch(inputs: BracketInputs, *, expanded: bool) -> None:
     with st.expander("What the inputs mean", expanded=expanded):
         st.image(sketch_svg(inputs), width="stretch")
         st.caption(
-            "Redrawn from the sidebar as you change it. Green is the fixed "
-            "rear face, red is the applied load. Note that **L is the free "
-            "length from the front face of the plate**, not the overall "
-            "extent, and that the holes sit in the band above the fillet, "
-            "which is why a large fillet or a wide spacing can be rejected. "
-            "This is a schematic drawn from the numbers; the dimensioned "
-            "drawing produced during a run is measured off the solid itself."
+            "Redrawn from the sidebar as you change it. Green is the "
+            "restraint — **the plate is held only under its washers**, not "
+            "across the whole rear face — and red is the applied load. Note "
+            "that **L is the free length from the front face of the plate**, "
+            "not the overall extent, and that the holes sit in the band above "
+            "the fillet, which is why a large fillet or a wide spacing can be "
+            "rejected. This is a schematic drawn from the numbers; the "
+            "dimensioned drawing produced during a run is measured off the "
+            "solid itself."
         )
 
 
@@ -182,14 +192,22 @@ def show_numbers(outcome) -> None:
 
     target = outcome.inputs.target_factor_of_safety if outcome.inputs else None
 
+    # These have to be the numbers the verdict used. Showing the raw peak here
+    # would put "FoS 1.14" beside a green Pass, which reads as a broken tool
+    # even though both numbers are correct.
     left, middle, right = st.columns(3)
-    left.metric("Max von Mises", f"{summary.max_von_mises:.1f} MPa")
+    left.metric(
+        "Max von Mises (structural)",
+        f"{summary.max_von_mises_structural:.1f} MPa",
+        help="Highest stress outside the singular zone around the clamped "
+        "washer rings. The raw peak is reported below.",
+    )
     middle.metric("Tip deflection", f"{summary.tip_deflection:.4f} mm")
     right.metric(
         "Factor of safety",
-        f"{summary.factor_of_safety_peak:.2f}",
+        f"{summary.factor_of_safety_structural:.2f}",
         delta=(
-            f"{summary.factor_of_safety_peak - target:+.2f} vs target"
+            f"{summary.factor_of_safety_structural - target:+.2f} vs target"
             if target is not None
             else None
         ),
@@ -218,12 +236,19 @@ def show_numbers(outcome) -> None:
     )
 
     st.caption(
-        f"Peak von Mises {summary.max_von_mises:.3f} MPa at "
+        f"Structural peak {summary.max_von_mises_structural:.3f} MPa at "
+        f"x={summary.structural_location[0]:.2f}, "
+        f"y={summary.structural_location[1]:.2f}, "
+        f"z={summary.structural_location[2]:.2f} mm, giving "
+        f"K_t = {summary.stress_concentration:.3f} against the beam root "
+        f"stress of {reference.root_stress:.3f} MPa. It sits in the fillet and "
+        "is reported, not validated against: it is mesh dependent. "
+        f"The raw peak is {summary.max_von_mises:.3f} MPa at "
         f"x={summary.peak_location[0]:.2f}, y={summary.peak_location[1]:.2f}, "
-        f"z={summary.peak_location[2]:.2f} mm. "
-        f"K_t = {summary.stress_concentration:.3f} against the beam root stress "
-        f"of {reference.root_stress:.3f} MPa. The peak sits in the fillet and "
-        "is reported, not validated against: it is mesh dependent."
+        f"z={summary.peak_location[2]:.2f} mm, within "
+        f"{summary.restraint_zone:.2f} mm of a clamped washer edge — a "
+        "restraint singularity that rises without limit as the mesh is "
+        "refined, so the verdict does not use it."
     )
 
 
@@ -276,7 +301,8 @@ def main() -> None:
     st.title("Parametric bracket: CAD to CAE")
     st.caption(
         "Educational proof of concept. Linear elasticity; loads and restraints "
-        "simplified; the whole rear face is fixed, so the holes carry no load. "
+        "simplified; the plate is held only under its washers, with a rigid "
+        "clamp and no bolt preload, friction or contact. "
         "Contact, bolt preload, fatigue, fracture, thermal loads, manufacturing "
         "tolerances and certification are outside this version. Results require "
         "independent engineering verification and are not suitable for product "

@@ -74,7 +74,7 @@ def test_every_stage_contributed_checks(coarse_run):
     for expected in (
         "CAD validity",
         "Element type",
-        "Area of fixed face (x = 0)",
+        "Area of washer annuli (x = 0)",
         "Solver completion",
         "Equilibrium",
         "Factor of safety",
@@ -185,7 +185,7 @@ def test_convergence_levels_do_not_redraw_the_same_geometry(study):
 def test_an_unknown_material_fails_with_a_reason_not_a_traceback(
     baseline, tmp_path
 ):
-    """A failure must produce a readable reason, not a traceback."""
+    """Fail safely, with a human-readable reason."""
     inputs = baseline.model_copy(update={"material": "unobtainium"})
 
     outcome = run_pipeline(inputs, tmp_path, render_images=False)
@@ -326,11 +326,16 @@ def test_convergence_reports_the_change_between_the_finest_levels(study):
 
 
 def test_convergence_is_judged_on_settled_quantities_not_the_peak(study):
-    """Engineering decision 2 again: the fillet peak never fully converges.
+    """Engineering decision 2 again, now with two peaks that misbehave.
 
-    Requiring it to settle would mean no mesh ever passes.
+    The fillet concentration converges slowly; the clamped edge does not
+    converge at all. Requiring either to settle would mean no mesh ever
+    passes, so the comment has to tell them apart rather than lumping them
+    together as "the peak".
     """
-    assert "not judged on it" in study.comment
+    assert "fillet peak changed by" in study.comment
+    assert "clamped edge" in study.comment
+    assert "the verdict does not use it" in study.comment
 
 
 def test_convergence_produces_an_advisory_check(study):

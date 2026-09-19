@@ -24,32 +24,67 @@ looks exactly like an FE error, which is a miserable thing to debug.
 
 ### 2. Do not validate against the peak stress
 
-The peak sits in the fillet stress concentration. Refine the mesh and it keeps
-rising — it does not converge, so it cannot be a validation target.
+Two peaks misbehave, for different reasons, and telling them apart is the whole
+point:
 
-Validation uses two quantities that do settle: tip deflection against beam
-theory, and bending stress at a section away from the root where St Venant's
-principle applies. The peak is reported separately as
-K_t = σ_FE,peak / σ_beam,root, with its location.
+- The **fillet peak** is a real stress concentration on real geometry. It does
+  converge, just slowly.
+- The peak at the **edge of a clamped washer ring** is a mathematical
+  singularity. Restraining a sharp-edged region of a continuum has no finite
+  answer, so refining the mesh makes the number worse for ever.
 
-The location matters. A peak in the fillet is a real feature; a peak on the
-edge of the fixed face is a restraint singularity and must not drive a verdict.
+Validation uses two quantities that do settle: tip deflection against the
+rigid-root bound, and bending stress at a section away from the root where St
+Venant's principle applies.
 
-### 3. Wide sections bend like plates, not beams
+The factor of safety uses the highest stress **outside one plate thickness of
+the clamped edge**, which is where the measurement shows the disturbance has
+died away. Both peaks are reported, with their locations, so the number that
+was set aside stays visible and a reader can disagree with the judgement
+instead of having it hidden from them.
+
+### 3. The rigid-root solutions are a floor, not a target
 
 With b/t = 15 the section is stiffer than beam theory predicts, by roughly
-1/(1−ν²). Deflection is therefore reported against two bounds: E (beam, more
-flexible) and E/(1−ν²) (plate, stiffer). The FE result is expected between
-them.
+1/(1−ν²), so deflection is computed against two bounds: E (beam, more flexible)
+and E/(1−ν²) (plate, stiffer). Note the plate bound is the *lower* deflection,
+which is easy to get backwards.
 
-Note the plate bound is the *lower* deflection, which is easy to get backwards.
+Both assume the arm grows out of a rigid wall, and the bracket is held by four
+washer rings on a 4 mm plate instead. **A support can only add compliance,
+never remove it**, so the stiffer closed form is a floor the FE result must
+exceed — it comes out at 1.98x here, and that excess is base flexibility rather
+than error.
 
-### 4. The whole rear face is fixed
+That makes the check one-sided, and sharper than the band it replaced. A band
+can be satisfied by two errors cancelling. A result *below* the floor has
+exactly one explanation: the model is held more tightly than the bracket is.
 
-The simplest restraint that represents bolting to a wall. It has one
-consequence that must be stated wherever results are: **the mounting holes
-carry no load in this model.** Restraining washer-sized annuli around the holes
-instead is a future improvement.
+### 4. The plate is held only under its washers
+
+A washer-sized annulus around each hole on the rear face, fully fixed. The rest
+of the rear face is free to lift and rotate, so the holes carry the load.
+
+This replaced a fully fixed rear face, and the replacement is not a free win.
+It trades a benign simplification for a malignant one:
+
+| | Fully fixed rear face | Washer annuli |
+|---|---|---|
+| Holes | carry no load at all | carry the load |
+| Peak stress | in the fillet, converges slowly | at a clamp edge, **never converges** |
+| Tip deflection | comparable to beam theory | 1.98x it, from base flexibility |
+| Fillet stress | 130.2 MPa | 138.8 MPa at the same load |
+
+That last row is the interesting one: **the fully fixed face was flattering the
+design by about 6.6%**, because holding the rear surface flat stiffens the very
+corner the bending moment acts on.
+
+The clamp is still an idealisation — perfectly rigid, with no bolt preload, no
+friction and no contact.
+
+`washer_diameter` is a required input with no default, because it changes the
+answer. Rings are validated like any other geometry: larger than the hole, not
+overlapping each other, not hanging off the plate.
 
 ### 5. Second-order tetrahedra, at least two through the thickness
 
@@ -70,9 +105,10 @@ margin and turns red on the next library upgrade.
 |---|---|---|
 | Volume vs hand calculation | 1e-4 relative | Smallest defect to catch is a missing fillet at 0.74% of the section — 74× the threshold |
 | Face area | 1% | A wrong face is out by hundreds of percent. Cannot be tighter: a meshed hole is a polygon, which legitimately shifts the area by ~0.1% |
+| Clamped annulus area | 15% | Looser on purpose: the ring is not a CAD feature, so its boundary can only follow whole element faces. Selecting the whole rear face instead reads 780% out, fifty times the threshold |
 | Equilibrium | 1% | The solve actually returns the load to 1e-9 |
 | Section stress vs beam theory | 5% | Achieved 0.14%; headroom left for coarser meshes in the convergence study |
-| Tip deflection | band between the two stiffness bounds, 15% allowance | A physical statement rather than an arbitrary percentage |
+| Tip deflection | one-sided floor at the stiffer bound, 15% allowance | A support adds compliance and never removes it, so this cannot be violated without a real restraint error |
 | Mesh convergence | 2% between the two finest levels | Tighter is meaningless against the other approximations in the model |
 
 ## Measured results
@@ -105,17 +141,42 @@ plate one element thick pass unnoticed.
 
 ### Convergence
 
-| mesh size | elements | tip deflection | change | peak von Mises | change | section stress |
-|---|---|---|---|---|---|---|
-| 2.00 mm | 31,769 | 0.58684 | — | 126.253 | — | 62.519 |
-| 1.50 mm | 62,886 | 0.58754 | 0.12% | 130.217 | 3.10% | 62.413 |
-| 1.25 mm | 117,673 | 0.58779 | **0.04%** | 131.626 | **1.08%** | 62.547 |
+| mesh size | elements | tip deflection | change | section stress | change | fillet peak | change | clamp peak | change |
+|---|---|---|---|---|---|---|---|---|---|
+| 2.00 mm | 31,769 | 1.10215 | — | 55.021 | — | 118.807 | — | 214.159 | — |
+| 1.50 mm | 62,886 | 1.10706 | 0.45% | 54.923 | 0.18% | 122.113 | 2.78% | 240.762 | 12.42% |
+| 1.25 mm | 117,673 | 1.10517 | **0.17%** | 55.043 | **0.22%** | 122.652 | *0.44%* | 284.685 | **18.24%** |
 
-Tip deflection and section stress have settled, and the section stress
-oscillates around 62.5 MPa — the beam-theory value. The peak climbs
-monotonically with every refinement and shows no sign of stopping.
+Three different behaviours in one table:
 
-That is decision 2 demonstrated rather than asserted.
+- Tip deflection and section stress **settle**, and the section stress
+  oscillates around 55.0 MPa — the beam-theory value. Convergence is judged on
+  these.
+- The fillet peak **converges slowly** (2.78% to 0.44%). It is a real feature
+  with a finite answer; it just needs a fine mesh to find it.
+- The clamp peak **diverges, and accelerates** (12.42% to 18.24%). There is no
+  finite value for it to converge to.
+
+That is decision 2 demonstrated rather than asserted, and the contrast between
+"slow" and "never" is far more instructive than a single misbehaving number.
+
+### How far the clamp singularity reaches
+
+Peak von Mises against distance from the clamped edge, which is what sets the
+exclusion zone:
+
+| distance | peak | where |
+|---|---|---|
+| 0 | 273.593 MPa | at the clamp edge |
+| 0.5 t | 154.473 MPa | still near the ring |
+| **1.0 t** | **138.764 MPa** | **the fillet** |
+| 2.1 t | 138.764 MPa | the fillet |
+
+One plate thickness is St Venant applied to this geometry, and it is where the
+disturbance measurably dies. At the moment that zone was chosen the baseline
+still came out at FoS 1.982 against a target of 2.0 — **still failing** — which
+is the evidence it was set from where the singularity decays rather than from
+where the example would go green.
 
 ### Linearity
 
@@ -127,12 +188,33 @@ four figures.
 Linear elasticity must behave that way. Any deviation would have meant a
 nonlinearity or a load-dependent bug.
 
-### Why the baseline is 250 N
+### Why the baseline is 220 N
 
-At 500 N the design fails its own criterion: FoS = 275 / 260.4 = 1.06 against a
-target of 2.0. That is a correct engineering result, not a defect — but the
-shipped example should demonstrate a pass, and raising the load in the
-interface demonstrates a fail whenever one is wanted.
+At 250 N under the bolted restraint the design misses its own criterion by
+0.9% — FoS 1.982 against a target of 2.0. That is a correct engineering result
+rather than a defect, and it is the direct cost of modelling the restraint
+honestly: the fillet stress rises about 6.6% once the plate is free to rotate
+at the root.
+
+The shipped example should demonstrate a pass, so the load is 220 N, giving FoS
+2.252. Raising it in the interface demonstrates a fail whenever one is wanted.
+
+### One prediction that was wrong
+
+Before building the annulus selection I expected the selected area to be 10-20%
+out, because the ring is not a CAD feature and its boundary can only follow
+whole element faces.
+
+It is **0.10%** at the baseline. Selecting a face by its *centroid* makes the
+error unbiased: straddling faces are taken and dropped in roughly equal
+measure, so it cancels rather than accumulating.
+
+| mesh | 2.00 | 1.50 | 1.25 | 1.00 | 0.75 |
+|---|---|---|---|---|---|
+| area error | +1.49% | +0.10% | +1.12% | +0.04% | +0.07% |
+
+Note it does *not* fall monotonically. That is scatter, not a bias, which is
+why the test bounds the magnitude and never asserts a direction.
 
 ## Bugs worth remembering
 
@@ -191,8 +273,14 @@ either. Text collision is a thing you see.
 sidebar, and the app shows it above the run button. It exists because three
 things that matter were text-only until then: **L is the free length from the
 front face of the plate**, the **holes live in the band above the fillet**
-(much the most common reason a design is rejected), and the **whole rear face
-is fixed**, which is why the holes carry no load.
+(much the most common reason a design is rejected), and the plate is **held
+only under its washers**, which is the single assumption a reader most needs
+to get right.
+
+That last one nearly slipped through. When the restraint changed, the sketch
+still hatched the whole rear face and said "rear face fully fixed" — a plain
+statement of the opposite of what the model now does. A user-facing picture
+that contradicts the model is worse than no picture at all.
 
 It carries a footer saying it is a schematic, and that distinction is load
 bearing. `drawing.py` measures every dimension back off the projected solid,

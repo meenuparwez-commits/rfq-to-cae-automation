@@ -115,8 +115,11 @@ def _header(inputs: BracketInputs, material: Material) -> list[str]:
         f"{inputs.applied_load} N total, acting in -z",
         f"** Geometry    : H {inputs.plate_height}, L {inputs.arm_length}, "
         f"b {inputs.width}, t {inputs.thickness}, r {inputs.fillet_radius} mm",
-        "** Restraint   : entire rear face of the plate (x = 0) fully fixed.",
-        "**               The holes therefore carry no load in this model.",
+        f"** Restraint   : washer annuli at x = 0, {inputs.num_holes} rings of "
+        f"OD {inputs.washer_diameter} mm around the holes, fully fixed.",
+        "**               The rest of the rear face is free, so the holes do",
+        "**               carry the load - at the cost of a stress singularity",
+        "**               at the edge of each clamped ring.",
         "**",
     ]
 
@@ -174,8 +177,8 @@ def _step(nodal_forces: dict[int, np.ndarray]) -> list[str]:
     lines = [
         "*STEP",
         "*STATIC",
-        "** Engineering decision 4: the whole rear face is fully fixed in all",
-        "** three directions.",
+        "** Engineering decision 4: the plate is fixed in all three directions",
+        "** only where its bolts clamp it, under the washers.",
         "*BOUNDARY",
         f"{NSET_FIXED}, 1, 3, 0.0",
         "*CLOAD",

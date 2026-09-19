@@ -8,14 +8,15 @@ Two different questions live here and must not be confused:
                             bending stress away from the root
     Is the design good?     factor of safety against the target
 
-A solve that finishes proves neither, so every check here compares against
-something computed independently.
+A solve that finishes proves neither. This project never claims validation
+because the solver returned, so every check below compares against something
+computed independently.
 
-The peak stress is deliberately not a validation target. It sits in the fillet
-stress concentration, where the value depends on mesh refinement and never
-fully converges. Validation uses tip deflection and bending stress away from
-the root; the peak is reported as K_t = sigma_FE,peak / sigma_beam,root.
-See docs/engineering-notes.md.
+Engineering decision 2 governs what is validated: NOT the peak stress. The peak
+sits in the fillet stress concentration, where the value depends on mesh
+refinement and never fully converges. Validation uses tip deflection and
+bending stress at a section away from the root; the peak is reported separately
+as K_t = sigma_FE,peak / sigma_beam,root.
 """
 
 from __future__ import annotations
@@ -29,27 +30,50 @@ from enum import Enum
 from src.analytical import AnalyticalReference
 from src.geometry_checks import ADVISORY, CheckResult
 from src.result_reader import Results, SectionStress
-from src.schemas import Material
+from src.schemas import BracketInputs, Material
 
-# A linear static solve does far better than 1%: the baseline returns the
-# applied load to 1e-9.
+# Equilibrium tolerance. In practice a linear static solve does
+# far better than this: the baseline returns the applied load to 1e-9.
 EQUILIBRIUM_REL_TOL = 0.01
 
-# Away from the load and the restraint, St Venant applies and beam theory
-# should be accurate. The baseline achieves 0.14% at mid-span; 5% leaves room
-# for the coarser meshes in the convergence study.
+# Bending stress away from the root should match beam theory closely, because
+# the section is far from both the load and the restraint (St Venant). The
+# baseline achieves 0.14% at mid-span; 5% leaves room for the coarser meshes
+# used in the convergence study without ever tolerating a real error.
 SECTION_STRESS_REL_TOL = 0.05
 
-# Allowance either side of the beam/plate stiffness band. The band itself is
-# physical (a wide section bends more like a plate, stiffer by 1/(1-nu^2)), so
-# the FE deflection is expected between the two. The allowance covers the
-# mounting plate's own flexibility, which beam theory treats as a rigid wall.
+# Allowance either side of the beam/plate stiffness band. The band itself is a
+# physical statement (engineering decision 3): a wide section bends more like a
+# plate, which is stiffer by 1/(1-nu^2), so the FE deflection is expected
+# between the two. The allowance covers extra flexibility from the mounting
+# plate, which is not the rigid wall beam theory assumes.
 DEFLECTION_BAND_TOL = 0.15
 
 # A stress concentration below 1 would mean the peak is lower than the nominal
 # root stress, which is not physical for a filleted corner. Above this, the
 # peak is more likely a restraint singularity than a real feature.
 MAX_PLAUSIBLE_KT = 5.0
+
+# How far from the clamped edge the restraint's own singularity is treated as
+# an artefact, as a multiple of plate thickness.
+#
+# Restraining a sharp-edged ring of a continuum produces a stress that rises
+# without limit as the mesh is refined. It is not a material stress: a real
+# bolted joint has a finite contact pressure, friction, and a washer that
+# deforms. Ignoring it is not optional - it is mesh dependent, so letting it
+# drive the verdict would make the verdict mesh dependent too.
+#
+# One thickness is St Venant applied to this geometry, and it is where the
+# measurement says the disturbance has died away. Measured on the baseline,
+# peak von Mises against distance from the clamped edge:
+#
+#   at the edge   273.593 MPa      1.0 t   138.764 MPa  (and now in the fillet)
+#   0.5 t         154.473 MPa      2.1 t   138.764 MPa
+#
+# Note this rule does NOT rescue the shipped baseline, which still comes out
+# under its target. It was set from where the singularity decays, not from
+# where the example would pass.
+RESTRAINT_ZONE_THICKNESSES = 1.0
 
 
 @dataclass(frozen=True)
@@ -65,19 +89,66 @@ class ResultSummary:
     stress_concentration: float
     factor_of_safety_peak: float
     factor_of_safety_section: float
+    # The same peak with the clamp singularity set aside. This is the one the
+    # verdict uses; the raw peak above is reported so the singularity stays
+    # visible rather than being quietly dropped.
+    max_von_mises_structural: float
+    structural_location: tuple[float, float, float]
+    factor_of_safety_structural: float
+    restraint_zone: float
 
 
 def peak_stress_location(results: Results, points: np.ndarray) -> tuple[float, float, float]:
     """Coordinates of the highest von Mises stress, mm.
 
     Worth reporting rather than just the value: a peak in the fillet is a real
-    stress concentration, while a peak on the edge of the fixed face is a
+    stress concentration, while a peak at the edge of a clamped ring is a
     restraint singularity and must not drive a verdict on its own.
     """
     index = int(np.argmax(results.von_mises))
     x, y, z = points[index]
 
     return float(x), float(y), float(z)
+
+
+def distance_to_clamped_edge(points: np.ndarray, inputs: BracketInputs) -> np.ndarray:
+    """Distance from each point to the nearest clamped washer edge, mm.
+
+    The clamped edge is a circle of radius R in the plane x = 0, around each
+    hole axis, so the set of points a fixed distance from it is a torus. Using
+    the circle rather than the hole axis matters: a cylinder around the axis
+    would also swallow the material straight behind the hole and, on a bracket
+    with low holes, part of the arm.
+    """
+    centres = np.asarray(inputs.hole_centres(), dtype=float)
+    outer = inputs.washer_diameter / 2.0
+
+    radial = np.linalg.norm(points[:, None, 1:] - centres[None, :, :], axis=2)
+    to_ring = np.hypot(radial - outer, points[:, 0][:, None])
+
+    return to_ring.min(axis=1)
+
+
+def structural_peak(
+    results: Results, points: np.ndarray, inputs: BracketInputs
+) -> tuple[float, tuple[float, float, float], float]:
+    """Highest von Mises stress outside the clamp's singular zone.
+
+    Returns the stress, its location and the zone radius used. Falls back to
+    the raw peak if the zone would swallow the whole model, so a pathological
+    input gives a conservative answer rather than an empty one.
+    """
+    zone = RESTRAINT_ZONE_THICKNESSES * inputs.thickness
+    outside = distance_to_clamped_edge(points, inputs) > zone
+
+    if not outside.any():
+        index = int(np.argmax(results.von_mises))
+    else:
+        index = int(np.argmax(np.where(outside, results.von_mises, -np.inf)))
+
+    x, y, z = points[index]
+
+    return float(results.von_mises[index]), (float(x), float(y), float(z)), zone
 
 
 def factor_of_safety(yield_strength: float, stress: float) -> float:
@@ -96,9 +167,11 @@ def summarise(
     reactions: np.ndarray,
     reference: AnalyticalReference,
     material: Material,
+    inputs: BracketInputs,
 ) -> ResultSummary:
     """Collect every headline number from one run."""
     peak = results.max_von_mises
+    structural, structural_location, zone = structural_peak(results, points, inputs)
 
     return ResultSummary(
         max_displacement=results.max_displacement,
@@ -107,13 +180,24 @@ def summarise(
         peak_location=peak_stress_location(results, points),
         section=section,
         reactions=reactions,
+        # K_t is taken on the structural peak. Against the raw peak it would be
+        # a ratio of a mesh-dependent number to a closed-form one, which says
+        # more about the mesh than about the bracket.
         stress_concentration=(
-            peak / reference.root_stress if reference.root_stress > 0.0 else float("nan")
+            structural / reference.root_stress
+            if reference.root_stress > 0.0
+            else float("nan")
         ),
         factor_of_safety_peak=factor_of_safety(material.yield_strength, peak),
         factor_of_safety_section=factor_of_safety(
             material.yield_strength, section.magnitude
         ),
+        max_von_mises_structural=structural,
+        structural_location=structural_location,
+        factor_of_safety_structural=factor_of_safety(
+            material.yield_strength, structural
+        ),
+        restraint_zone=zone,
     )
 
 
@@ -158,50 +242,62 @@ def check_tip_deflection(
     reference: AnalyticalReference,
     tol: float = DEFLECTION_BAND_TOL,
 ) -> CheckResult:
-    """FE tip deflection should fall between the plate and beam bounds.
+    """The rigid-root solutions are a LOWER BOUND on the FE tip deflection.
 
-    Engineering decision 3. The plate bound uses E/(1-nu^2) and is the stiffer
-    of the two, so it is the LOWER deflection; the beam bound uses E and is the
-    higher. A wide section (b/t = 15 here) behaves more like a plate, so the FE
-    result is expected near the plate bound, with the mounting plate's own
-    flexibility pushing it back towards the beam value.
+    Engineering decision 3, restated for the bolted restraint. Both closed
+    forms assume the arm grows out of a rigid wall. The bracket does not: it is
+    held by four washer-sized rings on a 4 mm plate, and that plate bends and
+    rotates. A support can only ever add compliance, never remove it, so
 
-    This is a physical band rather than an arbitrary percentage, which is why
-    the tolerance only has to cover what sits outside the physics.
+        FE deflection >= the stiffer closed form, always.
+
+    That makes this a one-sided check, and a sharper one than the old band.
+    The band could be satisfied by two errors cancelling; a result BELOW the
+    rigid-root value has only one explanation, which is that the model is held
+    more tightly than the bracket is - too many restrained nodes, a restraint
+    on the wrong face, or an annulus that has swallowed the whole rear face.
+
+    The excess over the bound is not an error to be minimised. It is the base
+    flexibility, and it is reported as a compliance ratio because it is the
+    single number that says how much the mounting is contributing.
     """
-    lower = reference.tip_deflection_plate * (1.0 - tol)
-    upper = reference.tip_deflection_beam * (1.0 + tol)
-    passed = lower <= fe_deflection <= upper
+    plate_bound = reference.tip_deflection_plate
+    beam_bound = reference.tip_deflection_beam
 
-    ratio_beam = fe_deflection / reference.tip_deflection_beam
-    ratio_plate = fe_deflection / reference.tip_deflection_plate
+    # The plate bound is the stiffer of the two and therefore the smaller
+    # deflection, so it is the bound that must not be undercut.
+    floor = min(plate_bound, beam_bound) * (1.0 - tol)
+    passed = fe_deflection >= floor
 
-    where = (
-        "between the bounds"
-        if reference.tip_deflection_plate
-        <= fe_deflection
-        <= reference.tip_deflection_beam
-        else "outside the bounds"
-    )
+    ratio_beam = fe_deflection / beam_bound
+    ratio_plate = fe_deflection / plate_bound
+
+    if passed:
+        message = (
+            f"FE {fe_deflection:.5f} mm against the rigid-root bounds: plate "
+            f"(E/(1-nu^2)) {plate_bound:.5f} mm, beam (E) {beam_bound:.5f} mm. "
+            f"FE/plate {ratio_plate:.4f}, FE/beam {ratio_beam:.4f}. The excess "
+            "is the mounting plate flexing between its bolts, which the "
+            "closed forms do not model."
+        )
+    else:
+        message = (
+            f"FE {fe_deflection:.5f} mm is BELOW the rigid-root bound "
+            f"{floor:.5f} mm (stiffer bound {min(plate_bound, beam_bound):.5f} "
+            f"mm with {tol:.0%} allowance). A bracket on a flexible mounting "
+            "cannot be stiffer than the same bracket built into a rigid wall, "
+            "so the model is over-restrained: check that the clamped annuli "
+            "have not grown to cover the whole rear face."
+        )
 
     return CheckResult(
-        name="Tip deflection vs beam theory",
+        name="Tip deflection vs rigid-root bound",
         passed=passed,
-        message=(
-            f"FE {fe_deflection:.5f} mm, {where}: plate (E/(1-nu^2)) "
-            f"{reference.tip_deflection_plate:.5f} mm, beam (E) "
-            f"{reference.tip_deflection_beam:.5f} mm. "
-            f"FE/beam {ratio_beam:.4f}, FE/plate {ratio_plate:.4f}."
-            if passed
-            else f"FE {fe_deflection:.5f} mm lies outside the accepted band "
-            f"{lower:.5f} to {upper:.5f} mm, set by the plate bound "
-            f"{reference.tip_deflection_plate:.5f} and beam bound "
-            f"{reference.tip_deflection_beam:.5f} mm with {tol:.0%} allowance."
-        ),
+        message=message,
         value=fe_deflection,
-        expected=reference.tip_deflection_beam,
-        # Advisory rather than critical: beam theory is a reference, not ground
-        # truth, and the model legitimately includes effects it ignores.
+        expected=min(plate_bound, beam_bound),
+        # Advisory: "analytical deviation beyond tolerance" is a Review in
+        # a Review. Beam theory is a reference, not ground truth.
         severity=ADVISORY,
     )
 
@@ -213,9 +309,9 @@ def check_section_stress(
 ) -> CheckResult:
     """Bending stress away from the root, against beam theory.
 
-    This is the stress comparison that validates, not the peak. The section is
-    far from both the load and the restraint, so St Venant's principle applies
-    and beam theory should be accurate.
+    Engineering decision 2: this is the stress comparison that validates, not
+    the peak. The section is far from both the load and the restraint, so St
+    Venant's principle applies and beam theory should be accurate.
     """
     fe = section.magnitude
     expected = reference.section_stress
@@ -255,35 +351,49 @@ def check_stress_concentration(
 
     This is reported, not validated against. The peak sits in the fillet, where
     the value depends on mesh refinement and never fully converges, which is
-    exactly why it is not a validation target.
+    exactly why engineering decision 2 forbids validating on it.
 
     A K_t below 1 would mean the peak is under the nominal root stress, which a
-    filleted corner cannot produce. A very high one usually means the peak is a
-    restraint singularity at the edge of the fixed face rather than a real
-    feature.
+    filleted corner cannot produce. A very high one usually means the peak has
+    been taken inside a singular region rather than on a real feature.
+
+    K_t is taken on the structural peak, outside the clamp's singular zone.
+    Against the raw peak it would be the ratio of a mesh-dependent number to a
+    closed-form one, which says more about the mesh than about the bracket.
     """
     k_t = summary.stress_concentration
-    x, y, z = summary.peak_location
+    x, y, z = summary.structural_location
+    px, py, pz = summary.peak_location
     passed = 1.0 <= k_t <= max_plausible
+
+    clamp_note = (
+        f" The raw peak is {summary.max_von_mises:.3f} MPa at x={px:.2f}, "
+        f"y={py:.2f}, z={pz:.2f} mm, within {summary.restraint_zone:.2f} mm of "
+        "a clamped edge; that one is a restraint singularity and rises without "
+        "limit with refinement."
+    )
 
     return CheckResult(
         name="Stress concentration K_t",
         passed=passed,
         message=(
-            f"K_t = {k_t:.3f} (peak {summary.max_von_mises:.3f} MPa at "
-            f"x={x:.2f}, y={y:.2f}, z={z:.2f} mm; beam root stress "
+            f"K_t = {k_t:.3f} (structural peak "
+            f"{summary.max_von_mises_structural:.3f} MPa at x={x:.2f}, "
+            f"y={y:.2f}, z={z:.2f} mm; beam root stress "
             f"{reference.root_stress:.3f} MPa). Reported, not validated "
-            "against: the fillet peak is mesh dependent."
+            "against: the fillet peak is mesh dependent." + clamp_note
             if passed
             else f"K_t = {k_t:.3f} is outside the plausible range 1 to "
-            f"{max_plausible:.0f} (peak {summary.max_von_mises:.3f} MPa at "
-            f"x={x:.2f}, y={y:.2f}, z={z:.2f} mm). A very high value usually "
-            "means the peak is a restraint singularity at the edge of the "
-            "fixed face, not a real stress concentration."
+            f"{max_plausible:.0f} (structural peak "
+            f"{summary.max_von_mises_structural:.3f} MPa at x={x:.2f}, "
+            f"y={y:.2f}, z={z:.2f} mm). A very high value usually means the "
+            "singular zone around the clamped rings is too small and the peak "
+            "is still being taken inside it." + clamp_note
         ),
         value=k_t,
-        # Advisory: a high peak in a singularity region needs a human eye, not
-        # an automatic rejection. The peak is reported, never validated against.
+        # Advisory: "high stress only at a fixed-edge or fillet
+        # singularity region" under Review. The peak is reported, never
+        # validated against.
         severity=ADVISORY,
     )
 
@@ -292,33 +402,42 @@ def check_stress_concentration(
 
 
 def check_factor_of_safety(summary: ResultSummary, target: float) -> CheckResult:
-    """Factor of safety on the peak stress, against the target.
+    """Factor of safety on the structural peak, against the target.
 
-    Reported on the peak, which is the conservative choice, with the
-    away-from-root value alongside. A design failing only on the fillet peak
-    may still be acceptable once the concentration is assessed properly, but
-    that is an engineering judgement this tool does not make.
+    It has to be the structural peak. The raw peak now sits at the edge of a
+    clamped ring, where restraining a sharp edge of a continuum produces a
+    stress that climbs with every refinement and never settles. A verdict
+    driven by that number would change every time the mesh changed, which is
+    the opposite of what a verdict is for.
+
+    The raw peak and the away-from-root value are both reported alongside, so
+    the number that was set aside stays visible and a reader can disagree with
+    the judgement rather than having it hidden from them.
     """
-    peak_fos = summary.factor_of_safety_peak
-    passed = peak_fos >= target
+    fos = summary.factor_of_safety_structural
+    passed = fos >= target
+
+    context = (
+        f"Raw peak FoS is {summary.factor_of_safety_peak:.3f} at the clamped "
+        f"edge (set aside as a restraint singularity); away from the root the "
+        f"FoS is {summary.factor_of_safety_section:.3f}."
+    )
 
     return CheckResult(
         name="Factor of safety",
         passed=passed,
         message=(
-            f"FoS {peak_fos:.3f} on the peak von Mises "
-            f"{summary.max_von_mises:.3f} MPa, against a target of "
-            f"{target:.2f}. Away from the root the FoS is "
-            f"{summary.factor_of_safety_section:.3f}."
+            f"FoS {fos:.3f} on the structural peak "
+            f"{summary.max_von_mises_structural:.3f} MPa, against a target of "
+            f"{target:.2f}. " + context
             if passed
-            else f"FoS {peak_fos:.3f} on the peak von Mises "
-            f"{summary.max_von_mises:.3f} MPa is below the target of "
-            f"{target:.2f}. Away from the root the FoS is "
-            f"{summary.factor_of_safety_section:.3f}. The design does not meet "
-            "its own criterion: reduce the load, increase the thickness, or "
-            "choose a stronger material."
+            else f"FoS {fos:.3f} on the structural peak "
+            f"{summary.max_von_mises_structural:.3f} MPa is below the target "
+            f"of {target:.2f}. " + context + " The design does not meet its "
+            "own criterion: reduce the load, increase the thickness, enlarge "
+            "the washers, or choose a stronger material."
         ),
-        value=peak_fos,
+        value=fos,
         expected=target,
     )
 
@@ -345,6 +464,7 @@ def run_result_checks(
 class Verdict(str, Enum):
     """The single answer a run reduces to.
 
+    The three outcomes:
       PASS   - every check is satisfied and FoS >= target.
       REVIEW - the run is usable but something needs a human eye: a marginal
                mesh, a deviation from theory beyond tolerance, or a stress peak

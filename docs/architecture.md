@@ -44,7 +44,7 @@ interface, so the two cannot drift apart.
 | `geometry_checks.py` | Recomputes the expected geometry from first principles and compares. Also home to `CheckResult` |
 | `drawing.py` | First-angle projections, DXF and PDF, dimensions measured back off the projection |
 | `mesh_generator.py` | Gmsh meshing, mesh statistics and mesh checks |
-| `boundary_detection.py` | Finds the restrained and loaded faces by coordinate; builds equivalent nodal forces |
+| `boundary_detection.py` | Finds the clamped washer annuli and the loaded face by coordinate; builds equivalent nodal forces |
 | `calculix_writer.py` | Writes the CalculiX deck |
 | `solver_runner.py` | Runs CalculiX and decides whether it actually succeeded |
 | `result_reader.py` | Parses `.frd` and `.dat`; extracts deflection and section stress |
@@ -117,7 +117,7 @@ the rest.
 ## Conventions relied on across modules
 
 **Coordinates.** x runs outward from the wall with the plate's rear face — the
-fixed face — at x = 0. y runs across the width, centred on zero. z is up, with
+clamped face — at x = 0. y runs across the width, centred on zero. z is up, with
 the arm's underside at z = 0. Several stages find faces by coordinate, so this
 is a contract, not an incidental detail.
 
@@ -144,7 +144,7 @@ end a run:
 
 ## Testing
 
-415 tests, about a minute. One test file per module.
+420 tests, about a minute. One test file per module.
 
 Every check has a matching test that proves it can **fail**. A check that has
 only ever passed is not evidence of anything — and three real bugs were caught

@@ -45,6 +45,7 @@ METAL_EDGE = "#4a5560"
 DIM = "#0b5ed7"
 LOAD = "#c1121f"
 FIXED = "#2f7d4f"
+CLAMP_FILL = "#d8ecdf"
 
 ARROW = 7.0  # half-length of a dimension arrowhead
 
@@ -181,34 +182,43 @@ def _leader(target: tuple[float, float], elbow: tuple[float, float],
     length = math.hypot(ex - tx, ey - ty) or 1.0
     dx, dy = (tx - ex) / length, (ty - ey) / length
     text_x = ex + (6 if anchor == "start" else -6)
+    style = "dimtext" if colour == DIM else "fixedtext"
     return [
-        f'<line x1="{ex:.1f}" y1="{ey:.1f}" x2="{tx:.1f}" y2="{ty:.1f}" class="dim"/>',
+        f'<line x1="{ex:.1f}" y1="{ey:.1f}" x2="{tx:.1f}" y2="{ty:.1f}"'
+        f' stroke="{colour}" stroke-width="1.3"/>',
         _arrowhead(tx, ty, dx, dy, colour),
-        _text(text_x, ey + 4, label, cls="dimtext", anchor=anchor),
+        _text(text_x, ey + 4, label, cls=style, anchor=anchor),
     ]
 
 
-def _fixed_hatch(view: _View, height: float) -> list[str]:
-    """The restraint symbol on the rear face: a face line with ground hatching.
+def _fixed_hatch(view: _View, inputs: BracketInputs) -> list[str]:
+    """The restraint symbol: ground hatching only under the washers.
 
-    Worth showing, because the whole rear face being fixed is the single
-    biggest simplification in the model and the reason the holes carry no
-    load.
+    Drawn as short bands at the washer heights rather than down the whole
+    plate, because that is the boundary condition. A symbol covering the
+    entire rear face would state the opposite of what the model does, and the
+    restraint is the single assumption a reader most needs to see.
     """
     x = view.x(0.0)
-    top, bottom = view.y(height), view.y(0.0)
-    parts = [
-        f'<line x1="{x:.1f}" y1="{top:.1f}" x2="{x:.1f}" y2="{bottom:.1f}"'
-        f' stroke="{FIXED}" stroke-width="3"/>'
-    ]
-    step = 13.0
-    y = top
-    while y <= bottom - 1:
+    outer = inputs.washer_diameter / 2.0
+    bands = sorted({z for _, z in inputs.hole_centres()})
+
+    parts: list[str] = []
+    for centre in bands:
+        top, bottom = view.y(centre + outer), view.y(centre - outer)
         parts.append(
-            f'<line x1="{x:.1f}" y1="{y:.1f}" x2="{x - 10:.1f}" y2="{y + 10:.1f}"'
-            f' stroke="{FIXED}" stroke-width="1.4"/>'
+            f'<line x1="{x:.1f}" y1="{top:.1f}" x2="{x:.1f}" y2="{bottom:.1f}"'
+            f' stroke="{FIXED}" stroke-width="3"/>'
         )
-        y += step
+        step = 9.0
+        y = top
+        while y <= bottom - 1:
+            parts.append(
+                f'<line x1="{x:.1f}" y1="{y:.1f}" x2="{x - 9:.1f}"'
+                f' y2="{y + 9:.1f}" stroke="{FIXED}" stroke-width="1.4"/>'
+            )
+            y += step
+
     return parts
 
 
@@ -286,11 +296,11 @@ def _side_view(view: _View, inputs: BracketInputs) -> list[str]:
         f'<path d="{profile}" fill="{METAL}" stroke="{METAL_EDGE}" stroke-width="1.8"'
         ' stroke-linejoin="round"/>',
     ]
-    parts += _fixed_hatch(view, H)
+    parts += _fixed_hatch(view, inputs)
     # Reads bottom-up alongside the hatching, where it cannot collide with the
     # thickness dimension at the top of the plate.
     parts.append(
-        _text(view.x(0) - 22, view.y(H / 2), "rear face fully fixed",
+        _text(view.x(0) - 22, view.y(H / 2), "held under the washers only",
               cls="fixed", rotate=-90.0)
     )
     parts += _load_symbols(view, inputs)
@@ -370,8 +380,16 @@ def _front_view(view: _View, inputs: BracketInputs) -> list[str]:
     )
 
     centres = inputs.hole_centres()
+    washer = inputs.washer_diameter / 2.0
     for y_mm, z_mm in centres:
         cx, cy = hx(y_mm), view.y(z_mm)
+        # The clamped ring, drawn behind the hole: this is the entire
+        # restraint, so it belongs on the sketch as prominently as the hole.
+        parts.append(
+            f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{washer * view.scale:.1f}"'
+            f' fill="{CLAMP_FILL}" stroke="{FIXED}" stroke-width="1.2"'
+            ' stroke-dasharray="5 3"/>'
+        )
         parts.append(
             f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{radius * view.scale:.1f}"'
             f' fill="#ffffff" stroke="{METAL_EDGE}" stroke-width="1.6"/>'
@@ -418,6 +436,19 @@ def _front_view(view: _View, inputs: BracketInputs) -> list[str]:
         anchor="end",
     )
 
+    # The washer callout comes in from the right, so it points at the RIGHT
+    # hole of the bottom row. Pointing at the same hole as the diameter
+    # callout would drag its leader straight across the hole in between.
+    near_y, near_z = centres[1] if len(centres) > 1 else centres[0]
+    parts += _leader(
+        (hx(near_y) + washer * view.scale * 0.71,
+         view.y(near_z) + washer * view.scale * 0.71),
+        (view.x(b) + 34, view.y(near_z) + 44),
+        f"clamped &#216;{_num(inputs.washer_diameter)}",
+        anchor="start",
+        colour=FIXED,
+    )
+
     return parts
 
 
@@ -462,6 +493,7 @@ def sketch_svg(inputs: BracketInputs) -> str:
         f".note{{font-size:12.5px;fill:{MUTED};}}"
         f".load{{font-size:14px;font-weight:600;fill:{LOAD};}}"
         f".fixed{{font-size:12.5px;fill:{FIXED};}}"
+        f".fixedtext{{font-size:14px;font-weight:600;fill:{FIXED};}}"
         f".footer{{font-size:12.5px;fill:{MUTED};}}"
         f".dim{{stroke:{DIM};stroke-width:1.3;}}"
         f".witness{{stroke:{RULE};stroke-width:1;}}"

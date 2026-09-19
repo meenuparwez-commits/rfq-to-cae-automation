@@ -2,13 +2,14 @@
 
 Units: mm, N, MPa.
 
-The sequence lives here rather than in app.py so it can be tested without
-starting Streamlit, and so the report generator does not have to duplicate it.
-The UI is a thin layer over this.
+The alternative was putting the sequence in app.py, which would make the
+alternative was putting the sequence inside app.py, which would make the whole
+pipeline untestable without starting Streamlit, and would force the
+report generator to duplicate it. The UI stays a thin layer over this.
 
-Every stage is wrapped so a failure produces a readable reason and a Fail
-verdict rather than a traceback in the interface. The log is written as the run
-proceeds, so a crash still leaves evidence.
+Every stage is wrapped so a failure produces a human-readable reason and a Fail
+verdict rather than a traceback in the interface. The
+log is written as the run proceeds, so a crash still leaves evidence.
 """
 
 from __future__ import annotations
@@ -378,7 +379,7 @@ def run_pipeline(
         return finish(f"Results could not be sampled: {exc}")
 
     summary = engineering_checks.summarise(
-        results, mesh.points, tip, section, reactions, reference, material
+        results, mesh.points, tip, section, reactions, reference, material, inputs
     )
 
     result_results = engineering_checks.run_result_checks(
@@ -442,6 +443,11 @@ class ConvergenceLevel:
     num_nodes: int
     tip_deflection: float
     max_von_mises: float
+    # The fillet peak, with the clamp singularity set aside. Both are kept
+    # because they diverge for different reasons and at different rates: the
+    # clamp edge is a true singularity, while the fillet peak is a real
+    # concentration that merely converges slowly.
+    structural_peak: float
     section_stress: float
     verdict: Verdict
 
@@ -466,7 +472,8 @@ class ConvergenceStudy:
             value=self.deflection_change,
             expected=CONVERGENCE_REL_TOL,
             # Advisory: an unconverged study means the numbers need a closer
-            # look, not that they are wrong.
+            # look, not that they are wrong. "Convergence not
+            # reached" under Review.
             severity=ADVISORY,
         )
 
@@ -521,6 +528,7 @@ def run_convergence_study(
                 num_nodes=outcome.mesh_stats.num_nodes,
                 tip_deflection=outcome.summary.tip_deflection,
                 max_von_mises=outcome.summary.max_von_mises,
+                structural_peak=outcome.summary.max_von_mises_structural,
                 section_stress=outcome.summary.section.magnitude,
                 verdict=outcome.verdict.verdict,
             )
@@ -540,6 +548,9 @@ def run_convergence_study(
     peak_change = abs(
         finest.max_von_mises - previous.max_von_mises
     ) / previous.max_von_mises
+    fillet_change = abs(
+        finest.structural_peak - previous.structural_peak
+    ) / previous.structural_peak
 
     converged = (
         deflection_change <= CONVERGENCE_REL_TOL
@@ -559,9 +570,13 @@ def run_convergence_study(
             else "At least one is still moving, so the mesh is still "
             "influencing the answer. "
         )
-        + f"The peak von Mises changed by {peak_change:.2%}; it is expected to "
-        "keep creeping upwards because it sits in the fillet stress "
-        "concentration, which is why convergence is not judged on it."
+        + f"The two peaks behave differently and neither is judged on. The "
+        f"fillet peak changed by {fillet_change:.2%}: a real stress "
+        "concentration, converging but slowly. The peak at the clamped edge "
+        f"changed by {peak_change:.2%} and is accelerating, because "
+        "restraining a sharp-edged ring of a continuum has no finite answer "
+        "to converge to. Refining the mesh makes that number worse for ever, "
+        "which is exactly why the verdict does not use it."
     )
 
     return ConvergenceStudy(

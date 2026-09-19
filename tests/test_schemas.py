@@ -32,6 +32,7 @@ BASELINE = dict(
     hole_diameter=9.0,
     hole_spacing=30.0,
     num_holes=4,
+    washer_diameter=17.0,
     material="structural_steel_s275",
     applied_load=500.0,
     load_case="tip_load",
@@ -168,7 +169,7 @@ def test_unknown_field_is_rejected():
     ["plate_height", "thickness", "material", "applied_load", "load_case", "mesh_size"],
 )
 def test_safety_critical_fields_have_no_default(field):
-    """These must never default silently; omitting one has to fail."""
+    """These are never silently defaulted; omitting one must fail."""
     payload = {key: value for key, value in BASELINE.items() if key != field}
 
     with pytest.raises(ValidationError, match=field):
@@ -242,7 +243,9 @@ def test_tight_side_edge_distance_warns_but_is_allowed():
 
 
 def test_thin_ligament_between_holes_warns():
-    inputs = make_inputs(hole_diameter=20.0, hole_spacing=28.0, width=120.0)
+    inputs = make_inputs(
+        hole_diameter=20.0, hole_spacing=28.0, width=120.0, washer_diameter=26.0
+    )
 
     assert any("between adjacent holes" in note for note in inputs.warnings())
 

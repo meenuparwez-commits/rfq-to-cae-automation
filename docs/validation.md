@@ -58,28 +58,35 @@ nothing else would notice.
 
 | | |
 |---|---|
-| Applied | 250 N in −z |
-| Reactions | [−4.17×10⁻⁹, 9.69×10⁻¹⁰, **250.000000**] N |
+| Applied | 220 N in −z |
+| Reactions | [1.59×10⁻¹⁰, −2.88×10⁻⁹, **220.000000**] N |
 | Vertical error | 0.00 |
 | Lateral | 1.7×10⁻¹¹ |
 
-### Tip deflection against beam theory
+### Tip deflection against the rigid-root bound
 
-Engineering decision 3 predicted — *before any numbers existed* — that a wide
-section would sit between the beam and plate stiffness bounds, because a
-section with b ≫ t bends more like a plate, which is stiffer by 1/(1−ν²).
+Both closed forms assume the arm grows out of a rigid wall. The bracket does
+not: it is held by four washer rings on a 4 mm plate, and that plate bends and
+rotates. A support can only **add** compliance, never remove it, so the
+rigid-root solution is a floor:
 
 | | |
 |---|---|
-| Plate bound, E/(1−ν²) | 0.57778 mm (the stiffer, hence *lower*, bound) |
-| **FE result** | **0.58754 mm** |
-| Beam bound, E | 0.63492 mm |
+| Plate bound, E/(1−ν²) | 0.50844 mm (the stiffer, hence *lower*, bound) |
+| Beam bound, E | 0.55873 mm |
+| **FE result** | **1.10706 mm** |
+| Compliance ratio | FE/beam **1.98** |
 
-FE lands 1.7% above the plate bound and 7.5% below the beam bound, with
-b/t = 15. The prediction held.
+The bracket is about twice as flexible as the same bracket welded to a wall,
+and essentially all of that is the mounting plate flexing between its bolts.
 
-The check is therefore a *band* between the two bounds rather than a percentage
-tolerance — a physical statement rather than an arbitrary number.
+This makes the check **one-sided, and sharper than the band it replaced**. A
+band can be satisfied by two errors cancelling. A result *below* the rigid-root
+value has exactly one explanation — the model is held more tightly than the
+bracket is — which is precisely the error a restraint change is most likely to
+introduce. How far *above* the floor the result sits is a property of the
+design, so it is reported as a ratio rather than bounded by a number nobody
+could justify.
 
 ### Bending stress away from the root
 
@@ -92,7 +99,7 @@ principle applies and beam theory should be accurate.
 | 40 mm (mid-span) | 124.83 MPa | 125.00 | 0.9986 |
 | 60 mm | 62.68 MPa | 62.50 | 1.0029 |
 
-*(measured at 500 N; the shipped baseline is 250 N and halves exactly)*
+*(measured at 500 N; the shipped baseline is 220 N and scales exactly)*
 
 Top and bottom surfaces come out equal and opposite — +124.823 / −124.829 at
 mid-span — confirming pure bending with no membrane component, which is exactly
@@ -100,32 +107,51 @@ what the theory assumes.
 
 ## What is deliberately not validated
 
-**The peak stress.** It sits in the fillet stress concentration, where the
-mathematical stress rises without limit as the mesh is refined. Validating
-against it would mean validating against a number that depends on the mesh.
+**Either peak stress.** There are now two badly-behaved ones, and the
+convergence study separates them instead of lumping them together:
 
-The convergence study makes this visible rather than merely asserting it:
+| mesh size | elements | tip deflection | change | section stress | change | fillet peak | change | clamp peak | change |
+|---|---|---|---|---|---|---|---|---|---|
+| 2.00 mm | 31,769 | 1.10215 | — | 55.021 | — | 118.807 | — | 214.159 | — |
+| 1.50 mm | 62,886 | 1.10706 | 0.45% | 54.923 | 0.18% | 122.113 | 2.78% | 240.762 | 12.42% |
+| 1.25 mm | 117,673 | 1.10517 | **0.17%** | 55.043 | **0.22%** | 122.652 | 0.44% | 284.685 | **18.24%** |
 
-| mesh size | elements | tip deflection | change | peak von Mises | change | section stress |
-|---|---|---|---|---|---|---|
-| 2.00 mm | 31,769 | 0.58684 | — | 126.253 | — | 62.519 |
-| 1.50 mm | 62,886 | 0.58754 | 0.12% | 130.217 | 3.10% | 62.413 |
-| 1.25 mm | 117,673 | 0.58779 | **0.04%** | 131.626 | **1.08%** | 62.547 |
+Three different behaviours in one table:
 
-Tip deflection and section stress have settled — and the section stress
-oscillates around **62.5 MPa, the beam-theory value**. The peak climbs
-monotonically with every refinement and shows no sign of stopping.
+- **Tip deflection and section stress settle.** The section stress oscillates
+  around **55.0 MPa, the beam-theory value**. These are what convergence is
+  judged on.
+- **The fillet peak converges, but slowly** — 2.78% then 0.44%. It is a real
+  stress concentration on real geometry, so it does have a finite answer; it
+  just takes a fine mesh to find it.
+- **The clamp peak diverges, and accelerates** — 12.42% then 18.24%. This one
+  has no finite answer to converge to. Restraining a sharp-edged ring of a
+  continuum is a mathematical singularity, and refining the mesh makes the
+  number worse for ever.
 
-The peak is instead **reported** as a stress concentration factor:
+That distinction is the whole reason the verdict uses neither. The factor of
+safety is taken on the highest stress **outside one plate thickness** of the
+clamped edge, which is where the disturbance has measurably died away:
+
+| distance from the clamped edge | peak | where |
+|---|---|---|
+| 0 | 273.593 MPa | at the clamp edge |
+| 0.5 t | 154.473 MPa | still near the ring |
+| **1.0 t** | **138.764 MPa** | **the fillet** |
+| 2.1 t | 138.764 MPa | the fillet |
+
+*(measured at 250 N before the baseline load was reduced)*
+
+The fillet peak is then **reported** as a stress concentration factor:
 
 ```
-K_t = σ_FE,peak / σ_beam,root = 130.217 / 125.000 = 1.042
+K_t = σ_FE,structural / σ_beam,root = 122.113 / 110.000 = 1.110
 ```
 
-with its location — x = 8.35, y = 2.62, z = 4.04 mm. That matters: the fillet
-runs from (x=4, z=9) to (x=9, z=4), so the peak is at the fillet's lower
-tangent. A peak at x = 0 would have been a singularity at the edge of the fixed
-face, which must not drive a verdict.
+with its location — x = 4.04, y = 1.12, z = 8.35 mm. That matters: the fillet
+runs from (x=4, z=9) to (x=9, z=4), so the peak is on it. Taking K_t on the raw
+peak instead would give 2.189, which is the ratio of a mesh-dependent number to
+a closed-form one and says more about the mesh than about the bracket.
 
 ## A free check: linearity
 
@@ -138,6 +164,10 @@ Every result scaled exactly:
 | FE/beam | 0.9254 | 0.9254 | unchanged |
 | Section stress error | 0.14% | 0.14% | unchanged |
 | K_t | 1.042 | 1.042 | unchanged |
+
+*(measured under the earlier fully-fixed restraint. The same holds now: the
+section stress error stays at 0.14% and the compliance ratio at 1.98 whether
+the load is 250 N or 220 N.)*
 
 Linear elasticity *must* behave this way. Any deviation would have meant a
 nonlinearity or a load-dependent bug.
@@ -176,20 +206,22 @@ themselves. All eight agree exactly.
 
 ## Summary of the shipped baseline
 
-H 100, L 80, b 60, t 4, r 5, 4 × ⌀9 holes, S275 steel, 250 N tip load,
-1.5 mm mesh.
+H 100, L 80, b 60, t 4, r 5, 4 × ⌀9 holes clamped under ⌀17 washers, S275
+steel, 220 N tip load, 1.5 mm mesh. 62,886 elements, 319,398 equations.
 
 | Check | Result |
 |---|---|
 | CAD volume vs hand calculation | 0.00e+00 relative error |
+| Clamped area vs hand calculation | 654.133 vs 653.451 mm², 0.10% |
 | Equilibrium | exact to 1e-9 |
-| Tip deflection | between the plate and beam bounds |
+| Tip deflection | 1.10706 mm, 1.98× the rigid-root floor |
 | Bending stress at mid-span | 0.14% from beam theory |
 | Mesh through thickness | 2.1 elements |
-| Convergence | settled to 0.04% |
-| K_t | 1.042, peak in the fillet |
-| **Factor of safety** | **2.112** against a target of 2.0 |
-| **Verdict** | **Pass**, 21 checks |
+| Convergence | settled to 0.17% |
+| K_t | 1.110, fillet peak 122.113 MPa |
+| Clamp singularity | 240.762 MPa, reported and set aside |
+| **Factor of safety** | **2.252** against a target of 2.0 |
+| **Verdict** | **Pass**, 22 checks |
 
 **None of this makes the tool certified.** It makes the numbers traceable. See
 [limitations.md](limitations.md).

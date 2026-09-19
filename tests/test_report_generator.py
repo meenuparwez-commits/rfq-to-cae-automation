@@ -56,15 +56,19 @@ def make_outcome(
             bottom_mean=-reference.section_stress,
         )
         summary = ResultSummary(
-            max_displacement=0.5912,
-            tip_deflection=0.58754,
-            max_von_mises=130.217,
-            peak_location=(8.35, 2.62, 4.04),
+            max_displacement=1.2650,
+            tip_deflection=1.25803,
+            max_von_mises=273.593,
+            peak_location=(0.0, -15.49, 29.85),
             section=section,
             reactions=np.asarray([0.0, 0.0, inputs.applied_load]),
-            stress_concentration=1.042,
-            factor_of_safety_peak=2.112,
+            stress_concentration=1.110,
+            factor_of_safety_peak=1.005,
             factor_of_safety_section=4.406,
+            max_von_mises_structural=138.764,
+            structural_location=(4.04, 1.12, 8.35),
+            factor_of_safety_structural=1.982,
+            restraint_zone=4.0,
         )
 
     return RunOutcome(
@@ -102,7 +106,8 @@ def test_report_lists_the_limitations(inputs, reference, tmp_path):
 
     for phrase in (
         "Linear elastic",
-        "holes carry no load",
+        "held only under its washers",
+        "singularity",
         "bolt preload",
         "fatigue",
         "mesh",
@@ -148,9 +153,11 @@ def test_hand_calculations_appear_next_to_the_fe_numbers(inputs, reference, tmp_
     """A result without its reference is an assertion, not evidence."""
     html = report_generator.build_report(make_outcome(inputs, reference, tmp_path))
 
-    assert "0.58754" in html  # FE tip deflection
-    assert "0.63492" in html  # beam bound
-    assert "0.57778" in html  # plate bound
+    # Bounds at the shipped 220 N: beam FL^3/(3EI) = 220*80^3/(3*210000*320)
+    # = 0.55873 mm, and the plate bound is that times (1 - nu^2) = 0.91.
+    assert "1.25803" in html  # FE tip deflection
+    assert "0.55873" in html  # beam bound, a floor now rather than a band edge
+    assert "0.50844" in html  # plate bound
 
 
 def test_report_says_the_peak_is_not_used_for_validation(inputs, reference, tmp_path):
@@ -181,7 +188,7 @@ def test_inputs_are_recorded_so_the_run_can_be_reproduced(inputs, reference, tmp
     html = report_generator.build_report(make_outcome(inputs, reference, tmp_path))
 
     assert "Structural steel S275" in html
-    assert "250.00" in html  # applied load
+    assert "220.00" in html  # applied load
     assert "tip_load" in html
 
 
@@ -270,9 +277,9 @@ def test_convergence_table_is_included_when_a_study_is_given(
 
     study = ConvergenceStudy(
         levels=(
-            ConvergenceLevel(2.0, 31769, 57033, 0.58684, 126.253, 62.519, V.REVIEW),
-            ConvergenceLevel(1.5, 62886, 108160, 0.58754, 130.217, 62.413, V.PASS),
-            ConvergenceLevel(1.25, 117673, 191807, 0.58779, 131.626, 62.547, V.PASS),
+            ConvergenceLevel(2.0, 31769, 57033, 1.10215, 214.159, 118.807, 55.021, V.REVIEW),
+            ConvergenceLevel(1.5, 62886, 108160, 1.10706, 240.762, 122.113, 54.923, V.PASS),
+            ConvergenceLevel(1.25, 117673, 191807, 1.10517, 284.685, 122.652, 55.043, V.PASS),
         ),
         converged=True,
         deflection_change=0.00042,

@@ -21,20 +21,34 @@ assumption has stopped being valid there.
 
 ## What the boundary conditions assume
 
-**The entire rear face of the plate is fully fixed** (see
-engineering-notes.md). This is the single biggest simplification in the model,
-and it has
-a specific consequence worth stating plainly:
+**The plate is held only where its bolts clamp it** — a washer-sized annulus
+around each hole on the rear face, fully fixed in all three directions. The
+rest of the rear face is free to lift and rotate, so the holes do carry the
+load. That is closer to a bolted joint than a fully fixed face, but it buys a
+specific problem that has to be stated plainly:
 
-> **The mounting holes carry no load in this model.** They are cut in a face
-> that is rigidly held, so the bolts they represent are never loaded. The holes
-> affect the reported volume and mass, and they appear on the drawing, but they
-> do not affect the stress result.
+> **There is a stress singularity at the edge of every clamped ring.**
+> Restraining a sharp-edged region of a continuum produces a stress that rises
+> without limit as the mesh is refined — there is no finite value for it to
+> converge to. On the baseline the raw peak reads 240.8 MPa at a washer edge
+> and climbs by 18% per refinement with no sign of stopping.
 
-A real bracket is held by bolts through those holes, which load the plate
-locally around each hole and let the plate lift away from the wall between
-them. That would raise stress near the holes and reduce overall stiffness.
-Modelling washer-sized restraint annuli around the holes is a V2 item.
+The tool therefore reports that peak but never judges on it. The factor of
+safety uses the highest stress **outside a zone of one plate thickness around
+the clamped edge**, which is where the measurement shows the disturbance has
+died away (273.6 → 154.5 → 138.8 MPa at 0, 0.5t and 1.0t on an earlier run).
+Beyond that the highest stress is the fillet again, which is a real feature.
+
+The clamp itself is still an idealisation: it is perfectly rigid, with **no
+bolt preload, no friction and no contact**. A real washer deforms, the joint
+can slip, and the plate can only lift where the clamping pressure runs out.
+None of that is modelled.
+
+**The tip deflection is no longer comparable to a built-in cantilever.** With
+a flexible mounting the bracket deflects about twice what the rigid-root
+closed form predicts (1.107 mm against 0.559 mm). That excess is real base
+flexibility, not an error — but it does mean beam theory is a lower bound here
+rather than a target.
 
 **The load is applied as equivalent nodal forces** on either the tip face or
 the flat top of the arm. Real loads arrive through a bracket, a bolt or a

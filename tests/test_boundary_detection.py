@@ -60,34 +60,76 @@ def test_every_fixed_node_lies_on_the_rear_plane(mesh, inputs):
     assert np.allclose(x, 0.0, atol=boundary_detection.PLANE_TOL)
 
 
-def test_fixed_face_area_accounts_for_the_holes(mesh, inputs):
-    """b*H less four holes. Getting the holes wrong is a 4% error, detectable."""
-    expected = boundary_detection.expected_fixed_area(inputs)
-    gross = inputs.width * inputs.plate_height
+def test_restrained_area_is_the_washer_annuli_not_the_whole_face(mesh, inputs):
+    """One ring per hole: n * pi * (R^2 - r^2).
 
-    assert expected < gross
-    assert gross - expected == pytest.approx(
-        4 * math.pi * (inputs.hole_diameter / 2) ** 2, rel=1e-12
+    The restraint is the model's biggest assumption, so the area it covers is
+    worth pinning down twice: against the closed form, and against the whole
+    rear face it replaced. On the baseline it is about a ninth of it.
+    """
+    expected = boundary_detection.expected_fixed_area(inputs)
+    outer = inputs.washer_diameter / 2.0
+    inner = inputs.hole_diameter / 2.0
+
+    assert expected == pytest.approx(
+        inputs.num_holes * math.pi * (outer**2 - inner**2), rel=1e-12
     )
 
+    whole_face = inputs.width * inputs.plate_height
+    assert expected < whole_face / 5.0
+
     fixed = boundary_detection.detect_fixed_face(mesh, inputs)
-    assert boundary_detection.check_face_area(fixed, expected).passed
+    assert boundary_detection.check_face_area(
+        fixed, expected, rel_tol=boundary_detection.ANNULUS_AREA_REL_TOL
+    ).passed
 
 
-def test_fixed_face_area_is_slightly_over_the_ideal_because_holes_are_faceted(
-    mesh, inputs
-):
-    """A meshed hole is a polygon, which is smaller than its circle.
+def test_no_restrained_node_lies_outside_its_washer(mesh, inputs):
+    """Every selected node must be in a ring, and on the rear face.
 
-    So slightly more plate is left around it. The measured area should exceed
-    the hand calculation, not fall short: a shortfall would mean something
-    else is wrong.
+    This is the check the area comparison cannot make: two errors of opposite
+    sign would leave the total area right while restraining the wrong material.
+    """
+    fixed = boundary_detection.detect_fixed_face(mesh, inputs)
+    points = mesh.points[fixed.node_indices]
+
+    assert np.allclose(points[:, 0], 0.0, atol=1e-6)
+
+    centres = np.asarray(inputs.hole_centres(), dtype=float)
+    radial = np.linalg.norm(points[:, None, 1:] - centres[None, :, :], axis=2)
+    nearest = radial.min(axis=1)
+
+    # A face is taken when its centroid is in the ring, so its nodes can sit
+    # up to about one element outside. The bound uses the size this mesh was
+    # actually built at, not the size the inputs asked for: the requested size
+    # is exactly what a coarse mesh would hide behind.
+    assert nearest.max() <= inputs.washer_diameter / 2.0 + COARSE_SIZE
+    assert nearest.min() >= inputs.hole_diameter / 2.0 - COARSE_SIZE
+
+
+def test_annulus_area_survives_a_badly_under_resolved_ring(mesh, inputs):
+    """The ring is selected from whole element faces, so its edge is ragged.
+
+    This fixture is the worst case in the suite on purpose: 6 mm elements
+    across a 4 mm ring, so the mesh cannot even fit one element in the band.
+    It still lands inside the shipped tolerance, because selecting by face
+    centroid makes the error unbiased - straddling faces are taken and dropped
+    in roughly equal measure, so it cancels rather than accumulating.
+
+    The test asserts the magnitude, never the direction. The faceted-hole
+    error on a CAD-bounded face has a guaranteed sign; this one does not, and
+    asserting one would be asserting a coincidence.
     """
     fixed = boundary_detection.detect_fixed_face(mesh, inputs)
     expected = boundary_detection.expected_fixed_area(inputs)
 
-    assert fixed.total_area > expected
-    assert fixed.total_area < expected * 1.01
+    ring_width = (inputs.washer_diameter - inputs.hole_diameter) / 2.0
+    assert ring_width < COARSE_SIZE, "fixture is no longer the worst case"
+
+    error = abs(fixed.total_area - expected) / expected
+    assert error < boundary_detection.ANNULUS_AREA_REL_TOL, (
+        f"selected {fixed.total_area:.3f} vs ideal {expected:.3f}"
+    )
 
 
 # --- Load faces -----------------------------------------------------------
@@ -122,7 +164,7 @@ def test_udl_face_is_shortened_by_the_fillet(mesh, udl_inputs):
     """The flat top starts where the fillet becomes tangent, at x = t + r.
 
     The closed-form UDL result assumes load over the full length L, so the
-    analytical comparison has to account for the difference.
+    has to account for the difference rather than assume they are the same.
     """
     expected = boundary_detection.expected_load_area(udl_inputs)
 

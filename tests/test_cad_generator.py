@@ -42,8 +42,7 @@ def test_build_returns_one_valid_solid(bracket):
 def test_coordinate_convention(bracket):
     """Rear face at x = 0, symmetric about y = 0, underside at z = 0.
 
-    Boundary detection finds the fixed face by coordinate, so this convention is
-    part of
+    The fixed face is found by coordinate, so this convention is part of
     the contract between modules, not an incidental detail.
     """
     box = bracket.val().BoundingBox()
@@ -58,7 +57,7 @@ def test_coordinate_convention(bracket):
 def test_arm_free_length_is_measured_from_the_plate_front_face(bracket):
     """Total x extent must be thickness + arm_length, not arm_length.
 
-    L is the free length from the plate's front face. If the
+    L is defined as the free length from the plate's front face. If the
     arm were built L long overall, every analytical result would be
     wrong by one thickness.
     """
@@ -232,6 +231,7 @@ def test_build_from_inputs_matches_the_explicit_call(drilled_bracket):
         hole_diameter=HOLE_DIAMETER,
         hole_spacing=30.0,
         num_holes=4,
+        washer_diameter=17.0,
         material="structural_steel_s275",
         applied_load=500.0,
         load_case="tip_load",
