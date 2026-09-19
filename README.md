@@ -15,6 +15,13 @@ manufactured components.
 
 Units throughout: mm, N, MPa (N/mm²), tonne/mm³ for density, mass in kg.
 
+![Bracket deflecting under load, coloured by von Mises stress](docs/images/demo.gif)
+
+*A 250 N tip load, with the deflection exaggerated so it is visible — the real
+tip deflection is 0.59 mm on an 84 mm part. Rendered from the solved run rather
+than drawn as an illustration. Full 41-second walkthrough:
+[docs/bracket_demo.mp4](docs/bracket_demo.mp4).*
+
 ---
 
 ## What it does
