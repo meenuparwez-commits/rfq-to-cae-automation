@@ -45,7 +45,7 @@ dimensions against the projected geometry.
 | **Solver** | CalculiX, linear static |
 | **Interface** | Streamlit |
 | **Report** | Self-contained HTML, images embedded |
-| **Tests** | 420, one file per module |
+| **Tests** | 435, one file per module |
 
 ![Dimensioned sketch of the input parameters](docs/images/inputs-sketch.svg)
 
@@ -77,7 +77,7 @@ elements, 319,398 equations, about a minute end to end.
 
 *Von Mises stress on the deflected shape. The exaggeration factor is written
 into the caption of every fringe plot, so an exaggerated picture is never
-mistaken for the real deflected shape — the true tip deflection is 0.59 mm on
+mistaken for the real deflected shape — the true tip deflection is 1.11 mm on
 an 84 mm part.*
 
 ![Displacement](docs/images/displacement.png)

@@ -66,7 +66,7 @@ have to duplicate it.
 
 A stage never validates itself using the same logic that produced the result.
 The volume is compared with a hand calculation, not with another CAD query. The
-face areas are compared with `b·H − holes`, worked out from the inputs. The
+clamped area is compared with `n·π(R²−r²)`, worked out from the inputs. The
 deflection is compared with beam theory. The drawing's dimensions are measured
 off the projected geometry and compared with the inputs, so the check is not
 circular.
@@ -85,9 +85,12 @@ The same reasoning sets the face-area tolerance at 1%: a wrong face is out by
 hundreds of percent, while hole faceting legitimately moves the area by a
 fraction of a percent.
 
-The tip-deflection check is not a percentage at all. It is a band between the
-beam and plate stiffness bounds, which is a physical statement rather than an
-arbitrary number.
+The tip-deflection check is not really a percentage either. Both closed forms
+assume a rigid wall, and a support can only add compliance, so they are a floor
+the FE result must exceed rather than a band it should sit in. Its 2% is there
+to cover discretisation alone — and it was 15% until an audit caught that the
+figure had been inherited from the two-sided band this check replaced, where it
+had meant something entirely different.
 
 ### 3. Failures are classified, not lumped together
 
@@ -126,9 +129,11 @@ arm's solid box spans x = 0 to t + L while its free length is L. Building it L
 long overall would put every analytical comparison out by one thickness.
 
 **Element ordering.** meshio's `tetra10` ordering matches CalculiX's C3D10
-exactly, so elements are written unpermuted. This is verified by a test rather
-than assumed, because a wrong permutation still solves and simply gives the
-wrong answer.
+exactly, so elements are written unpermuted. A test checks every element's
+mid-side nodes against the midpoints of their designated edges — worst offset
+0.0740 mm at the baseline — and a companion test permutes two slots to prove it
+can fail. That matters because a wrong permutation still solves, and simply
+gives the wrong answer.
 
 ## Failure handling
 
@@ -144,7 +149,7 @@ end a run:
 
 ## Testing
 
-420 tests, about a minute. One test file per module.
+435 tests, about a minute. One test file per module.
 
 Every check has a matching test that proves it can **fail**. A check that has
 only ever passed is not evidence of anything — and three real bugs were caught

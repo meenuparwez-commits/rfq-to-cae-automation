@@ -31,3 +31,6 @@ venv/
 .claude/
 Thumbs.db
 desktop.ini
+
+# Internal audit working notes: cite local paths and the private spec.
+docs/audit_report.md
