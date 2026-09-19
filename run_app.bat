@@ -44,6 +44,22 @@ if not defined CONDA_BAT (
     exit /b 1
 )
 
+REM If a previous run is still serving, reuse it rather than failing on a port
+REM clash. Closing the browser does not stop the server, so this is easy to hit.
+netstat -ano | findstr ":%PORT%" | findstr "LISTENING" >nul 2>&1
+if not errorlevel 1 (
+    echo.
+    echo   The app is already running on http://localhost:%PORT%
+    echo   Opening it in your browser.
+    echo.
+    echo   To restart it instead, close the other console window first.
+    echo.
+    start "" http://localhost:%PORT%
+    REM ping, not timeout: timeout fails when stdin is redirected.
+    ping -n 5 127.0.0.1 >nul
+    exit /b 0
+)
+
 echo Using conda at: %CONDA_BAT%
 echo Checking the environment...
 
@@ -73,13 +89,21 @@ REM Open the browser shortly after the server starts. Streamlit runs headless
 REM here because its own browser-opening path also triggers a first-run
 REM "Welcome / Email:" prompt that waits on input, which would leave a
 REM double-clicked window sitting there apparently frozen.
-start "" /b cmd /c "timeout /t 8 /nobreak >nul & start "" http://localhost:%PORT%"
+start "" /b cmd /c "ping -n 9 127.0.0.1 >nul & start "" http://localhost:%PORT%"
 
 call "%CONDA_BAT%" run -n bracket-cae --no-capture-output ^
     streamlit run app.py --server.port %PORT% --server.headless true
 
 REM Keep the window open if it exited with an error, so the message can be
 REM read rather than vanishing with the console.
-if errorlevel 1 pause
+if errorlevel 1 (
+    echo.
+    echo   The app stopped with an error. The message is above.
+    echo.
+    echo   If it says the port is not available, another copy is still running:
+    echo   close its console window, or restart this one to reuse it.
+    echo.
+    pause
+)
 
 endlocal
