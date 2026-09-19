@@ -44,7 +44,16 @@ dimensions against the projected geometry.
 | **Solver** | CalculiX, linear static |
 | **Interface** | Streamlit |
 | **Report** | Self-contained HTML, images embedded |
-| **Tests** | 379, one file per module |
+| **Tests** | 415, one file per module |
+
+![Dimensioned sketch of the input parameters](docs/images/inputs-sketch.svg)
+
+*The app redraws this from the sidebar as you type, so the parameters are not
+just names in a form: L is the free length from the front face of the plate
+rather than the overall extent, the holes have to sit in the band above the
+fillet, and the whole rear face is fixed. It is a schematic drawn from the
+input numbers — the manufacturing drawing below is generated from the solid
+itself.*
 
 ## Results on the shipped baseline
 

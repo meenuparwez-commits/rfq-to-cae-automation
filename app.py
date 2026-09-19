@@ -23,6 +23,7 @@ from pydantic import ValidationError
 from src.engineering_checks import Verdict
 from src.pipeline import run_pipeline
 from src.schemas import BracketInputs, LoadCase, load_materials
+from src.sketch import sketch_svg
 
 DEFAULTS_PATH = Path("config/default_inputs.json")
 OUTPUT_ROOT = Path("outputs/app_run")
@@ -134,6 +135,25 @@ def sidebar_inputs(preset: dict) -> dict:
     }
 
     return {**geometry, **holes, **analysis, **mesh, "output_dir": str(OUTPUT_ROOT)}
+
+
+def show_sketch(inputs: BracketInputs, *, expanded: bool) -> None:
+    """A dimensioned schematic of whatever is currently in the sidebar.
+
+    Open before a run, because that is when someone is working out what to
+    type; collapsed afterwards so the verdict stays at the top of the page.
+    """
+    with st.expander("What the inputs mean", expanded=expanded):
+        st.image(sketch_svg(inputs), use_container_width=True)
+        st.caption(
+            "Redrawn from the sidebar as you change it. Green is the fixed "
+            "rear face, red is the applied load. Note that **L is the free "
+            "length from the front face of the plate**, not the overall "
+            "extent, and that the holes sit in the band above the fillet, "
+            "which is why a large fillet or a wide spacing can be rejected. "
+            "This is a schematic drawn from the numbers; the dimensioned "
+            "drawing produced during a run is measured off the solid itself."
+        )
 
 
 def show_verdict(outcome) -> None:
@@ -276,16 +296,31 @@ def main() -> None:
             "so an impossible design fails here with a reason rather than deep "
             "inside the CAD kernel."
         )
+        # The sketch cannot be drawn from inputs that were rejected, so the
+        # shipped example stands in: the point here is to show what each
+        # dimension means, which is usually what the reader needs after a
+        # rejection.
+        try:
+            st.caption("The example design, for reference — not your inputs:")
+            show_sketch(BracketInputs(**defaults()), expanded=True)
+        except ValidationError:
+            pass
         return
 
     for note in inputs.warnings():
         st.warning(note)
 
-    if not st.button("Generate and Analyse", type="primary"):
+    run = st.button("Generate and Analyse", type="primary")
+
+    if not run:
         st.info(
             "Set the design in the sidebar, then press Generate and Analyse. "
             "A run takes roughly a minute at the default mesh size."
         )
+
+    show_sketch(inputs, expanded=not run)
+
+    if not run:
         return
 
     status = st.empty()

@@ -54,6 +54,7 @@ interface, so the two cannot drift apart.
 | `report_generator.py` | Self-contained HTML report |
 | `logging_utils.py` | One log, two destinations |
 | `pipeline.py` | Orchestration, run folders, convergence study |
+| `sketch.py` | Dimensioned SVG schematic of the inputs, for the interface only |
 
 `pipeline.py` exists so the sequence
 is testable without starting Streamlit, and so the report generator does not
@@ -143,7 +144,7 @@ end a run:
 
 ## Testing
 
-379 tests, about 40 seconds. One test file per module.
+415 tests, about a minute. One test file per module.
 
 Every check has a matching test that proves it can **fail**. A check that has
 only ever passed is not evidence of anything — and three real bugs were caught

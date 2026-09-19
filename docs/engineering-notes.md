@@ -174,6 +174,46 @@ exactly why no assertion would have caught it.
 The last three share a lesson: some defects are only visible by looking at the
 artefact a human would actually use.
 
+**Every layout fault in the input sketch, again.** The thickness dimension
+landed on the fixed-face label. The overall length collided with the footer.
+The fillet callout sat on the arm; moved up, it sat under the load arrows;
+moved again, it walked into the length dimension whenever the arm was short. It
+now sits in the open air beside the plate and above the load symbols, the one
+region that stays empty at any proportions. Not one of these was caught by a
+test, and the tests that do exist — every input appears as a label, the labels
+follow the inputs, all drawn geometry stays inside the canvas at seven
+different proportions, the two views never overlap — would not have caught them
+either. Text collision is a thing you see.
+
+## The input sketch is not the drawing
+
+`sketch.py` draws a dimensioned schematic of whatever is currently in the
+sidebar, and the app shows it above the run button. It exists because three
+things that matter were text-only until then: **L is the free length from the
+front face of the plate**, the **holes live in the band above the fillet**
+(much the most common reason a design is rejected), and the **whole rear face
+is fixed**, which is why the holes carry no load.
+
+It carries a footer saying it is a schematic, and that distinction is load
+bearing. `drawing.py` measures every dimension back off the projected solid,
+which is what makes it evidence that the geometry matches its inputs. The
+sketch is drawn straight from the input numbers, so it can only ever restate
+them. An interface aid presented as a check would be precisely the kind of
+false assurance the rest of this project is built to avoid.
+
+The load symbols follow the load case, since the applied load and its formula
+have to describe the same thing. The UDL arrows start at x = t + r rather than
+at the plate face, matching the shortened span the analytical reference
+actually uses; a test increases the fillet radius and asserts they move right.
+
+It is SVG written as text — no rendering backend, no temporary file, sharp at
+any zoom, cheap enough to regenerate on every keystroke. Two details that
+mattered: arrowheads are explicit polygons rather than SVG markers, which are
+the first thing dropped when an SVG is rendered inside an `<img>`; and a 4 mm
+thickness is a dozen pixels wide at this scale, too narrow to hold its own
+arrows or its own label, so narrow dimensions get the drafting treatment —
+arrows outside the witness lines pointing in, text set off to one side.
+
 ## Conventions the code relies on
 
 **Coordinates.** x runs outward from the wall with the plate's rear face — the
