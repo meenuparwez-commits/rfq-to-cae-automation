@@ -40,6 +40,14 @@ dependencies:
   # Input validation (Pydantic v2 API is required)
   - pydantic=2.13.5
 
+  # Drawing: DXF authoring, and matplotlib for the PDF render of the sheet.
+  # Both arrive transitively today (ezdxf via CadQuery, matplotlib via
+  # PyVista), but src/drawing.py imports them directly, and a dependency that
+  # is only present by accident is one upstream change away from a broken
+  # clone. Declared here so the solver has to keep them.
+  - ezdxf=1.4.2
+  - matplotlib-base=3.11.2
+
   # User interface and reporting
   - streamlit=1.63.0
   - jinja2=3.1.6

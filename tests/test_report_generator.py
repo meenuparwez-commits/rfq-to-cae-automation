@@ -160,12 +160,53 @@ def test_hand_calculations_appear_next_to_the_fe_numbers(inputs, reference, tmp_
     assert "0.50844" in html  # plate bound
 
 
+def test_report_shows_the_numbers_the_verdict_used(inputs, reference, tmp_path):
+    """The report must not contradict its own verdict.
+
+    It previously printed the raw clamp peak and the factor of safety derived
+    from it, so a Pass against a target of 2.0 sat beside "FoS 1.142", and
+    K_t was printed next to a location it was not computed at. Both numbers
+    were correct; the pairing was not. The earlier tests here looked only for
+    broad phrases and sailed straight past it.
+    """
+    html = report_generator.build_report(make_outcome(inputs, reference, tmp_path))
+
+    # Structural values, which the verdict is made from.
+    assert "138.764" in html      # structural peak
+    assert "1.982" in html        # structural FoS
+    assert "4.04" in html         # structural location, in the fillet
+
+    # Raw values, present but explicitly set aside.
+    assert "273.593" in html      # raw peak
+    assert "1.005" in html        # raw FoS
+    assert "set aside" in html
+    assert "singularity" in html.lower()
+
+
+def test_report_pairs_kt_with_the_location_it_was_computed_at(
+    inputs, reference, tmp_path
+):
+    """K_t is taken on the structural peak, so it must carry that peak's
+    location. Printing it beside the clamp-edge coordinates asserted something
+    internally impossible."""
+    html = report_generator.build_report(make_outcome(inputs, reference, tmp_path))
+
+    # Only the table cell K_t sits in, so the next row's raw-peak location
+    # cannot be mistaken for it.
+    kt_index = html.index("K<sub>t</sub>")
+    cell = html[kt_index : html.index("</td>", kt_index)]
+
+    assert "4.04" in cell, "K_t is not beside the structural location"
+    assert "-15.49" not in cell, "K_t is beside the raw peak location"
+
+
 def test_report_says_the_peak_is_not_used_for_validation(inputs, reference, tmp_path):
     """Engineering decision 2, stated where a reader will see it."""
     html = report_generator.build_report(make_outcome(inputs, reference, tmp_path))
 
     assert "not validated against" in html
-    assert "never fully converges" in html
+    assert "never fully settles" in html      # the fillet peak
+    assert "no finite value to converge to" in html  # the clamp singularity
 
 
 def test_checks_are_tabulated_with_their_severity(inputs, reference, tmp_path):

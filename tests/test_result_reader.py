@@ -12,6 +12,8 @@ One real solve is included as an integration check.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -112,6 +114,69 @@ def test_rows_are_ordered_by_node_id_not_by_file_order(tmp_path):
         tmp_path / "job.frd",
         displacements={1: [1.0, 0.0, 0.0], 2: [2.0, 0.0, 0.0], 3: [3.0, 0.0, 0.0]},
         stresses={n: [0.0] * 6 for n in (1, 2, 3)},
+    )
+
+    results = result_reader.read_frd(path)
+
+    assert results.displacements[:, 0] == pytest.approx([1.0, 2.0, 3.0])
+
+
+@pytest.mark.parametrize(
+    "ids, what",
+    [
+        ((1, 3, 4), "a gap"),
+        ((1, 2, 4), "a gap at the end"),
+        ((0, 1, 2), "a zero-based set"),
+        ((2, 3, 4), "an off-by-one set"),
+    ],
+)
+def test_node_ids_that_are_not_a_contiguous_1_to_n_set_are_refused(
+    tmp_path, ids, what
+):
+    """The guard exists because a gap shifts every result by one node.
+
+    It had no negative test, so nothing proved it could fail — and its whole
+    value is catching a defect that is otherwise completely silent. A result
+    array off by one node still plots, still has a plausible peak, and is
+    wrong everywhere.
+    """
+    path = write_frd(
+        tmp_path / "job.frd",
+        displacements={n: [float(n), 0.0, 0.0] for n in ids},
+        stresses={n: [0.0] * 6 for n in ids},
+    )
+
+    with pytest.raises(ValueError, match="contiguous set of node ids"):
+        result_reader.read_frd(path)
+
+
+def test_a_repeated_node_id_is_refused():
+    """A duplicate id means one node's results were written twice and
+    another's not at all, so the array silently ends up holding a stale row.
+
+    This one goes at the guard directly rather than through a written file:
+    the test helper builds its rows from a dict, which cannot hold a repeated
+    key, so a file-based case would quietly collapse to a valid set and prove
+    nothing. That is worth saying out loud, because a test that cannot express
+    the failure it claims to cover is worse than no test.
+    """
+    ids = np.asarray([1, 2, 2], dtype=np.int64)
+    values = np.zeros((3, 3))
+
+    with pytest.raises(ValueError, match="contiguous set of node ids"):
+        result_reader._ordered((ids, values), Path("job.frd"), "DISP")
+
+
+def test_a_contiguous_set_in_shuffled_order_is_accepted(tmp_path):
+    """The guard is about the SET of ids, not the order they arrive in.
+
+    Rejecting a shuffled-but-complete block would be a false alarm, so the
+    negative tests above are paired with this one to pin the boundary.
+    """
+    path = write_frd(
+        tmp_path / "job.frd",
+        displacements={3: [3.0, 0.0, 0.0], 1: [1.0, 0.0, 0.0], 2: [2.0, 0.0, 0.0]},
+        stresses={n: [0.0] * 6 for n in (3, 1, 2)},
     )
 
     results = result_reader.read_frd(path)

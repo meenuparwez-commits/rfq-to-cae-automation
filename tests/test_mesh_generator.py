@@ -9,6 +9,7 @@ because the through-thickness check is only meaningful if it is seen to fail.
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from src import cad_generator, mesh_generator
@@ -46,11 +47,98 @@ def coarse_stats(step_path, tmp_path_factory):
     return mesh_generator.generate_mesh(step_path, COARSE_SIZE, msh)
 
 
+# --- Element node ordering ------------------------------------------------
+
+
+# meshio's tetra10 ordering, which is asserted to match CalculiX C3D10. Node i
+# of the second six sits at the midpoint of the edge joining this pair.
+MIDSIDE_EDGES = [(0, 1), (1, 2), (0, 2), (0, 3), (1, 3), (2, 3)]
+
+
+def test_midside_nodes_sit_on_the_edges_they_are_supposed_to(step_path, inputs,
+                                                             tmp_path_factory):
+    """Elements are written to the solver deck unpermuted, on the claim that
+    meshio's tetra10 ordering already matches CalculiX C3D10.
+
+    That claim was recorded as verified but had no test behind it, which is
+    worse than having no claim: a reader could not check it, and a wrong
+    permutation does not fail. It solves, and quietly returns the wrong
+    answer.
+
+    Each of nodes 5-10 must be closer to the midpoint of its designated edge
+    than to any other edge's midpoint. Curvature on the holes and the fillet
+    pulls mid-side nodes off the straight chord, so the test measures which
+    midpoint is nearest rather than demanding the node sit exactly on one.
+    """
+    msh = tmp_path_factory.mktemp("ordering") / "bracket_mesh.msh"
+    mesh_generator.generate_mesh(step_path, inputs.mesh_size, msh)
+    mesh = mesh_generator.read_mesh(msh)
+
+    points = mesh.points
+    tets = mesh.tets
+    corners = points[tets[:, :4]]                       # (n, 4, 3)
+    midsides = points[tets[:, 4:]]                      # (n, 6, 3)
+
+    # Midpoint of every edge, in the designated order.
+    midpoints = np.stack(
+        [(corners[:, a] + corners[:, b]) / 2.0 for a, b in MIDSIDE_EDGES],
+        axis=1,
+    )                                                   # (n, 6, 3)
+
+    # Distance from each mid-side node to every edge midpoint.
+    distances = np.linalg.norm(
+        midsides[:, :, None, :] - midpoints[:, None, :, :], axis=3
+    )                                                   # (n, 6, 6)
+    nearest = distances.argmin(axis=2)                  # (n, 6)
+
+    expected = np.arange(6)
+    wrong = np.argwhere(nearest != expected)
+
+    assert wrong.size == 0, (
+        f"{len(wrong)} mid-side nodes are nearer another edge's midpoint; "
+        f"first offender: element {wrong[0][0]}, slot {wrong[0][1]}, "
+        f"nearest {nearest[wrong[0][0], wrong[0][1]]}"
+    )
+
+    # Report the worst offset so the margin is visible rather than implied.
+    own = distances[:, expected, expected]
+    print(f"worst mid-side offset from its chord midpoint: {own.max():.4f} mm")
+
+
+def test_a_permuted_element_is_caught(step_path, inputs, tmp_path_factory):
+    """Proof the ordering test can fail.
+
+    A check that has only ever passed is not evidence of anything, and this
+    one guards a defect whose whole danger is that it stays silent.
+    """
+    msh = tmp_path_factory.mktemp("permuted") / "bracket_mesh.msh"
+    mesh_generator.generate_mesh(step_path, inputs.mesh_size, msh)
+    mesh = mesh_generator.read_mesh(msh)
+
+    points = mesh.points
+    tets = mesh.tets.copy()
+    # Swap two mid-side slots, the classic symptom of a wrong convention.
+    tets[:, [4, 5]] = tets[:, [5, 4]]
+
+    corners = points[tets[:, :4]]
+    midsides = points[tets[:, 4:]]
+    midpoints = np.stack(
+        [(corners[:, a] + corners[:, b]) / 2.0 for a, b in MIDSIDE_EDGES],
+        axis=1,
+    )
+    distances = np.linalg.norm(
+        midsides[:, :, None, :] - midpoints[:, None, :, :], axis=3
+    )
+    nearest = distances.argmin(axis=2)
+
+    assert not np.array_equal(nearest, np.tile(np.arange(6), (len(tets), 1)))
+
+
 # --- Output -------------------------------------------------------------
 
 
 def test_mesh_file_is_written_and_readable(fine_stats):
-    """A .msh that exists but cannot be parsed is no use to the solver stage."""
+    """A .msh that exists but cannot be parsed is no use to the solver."""
     import meshio
 
     assert fine_stats.msh_path.is_file()

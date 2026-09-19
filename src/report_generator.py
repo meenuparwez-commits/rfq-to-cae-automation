@@ -145,9 +145,11 @@ tonne/mm&sup3;, mass in kg</p>
 
 <div class="note">
   Validation follows the tip deflection and the bending stress at a section away
-  from the root. The peak stress sits in the fillet stress concentration, where
-  the value depends on mesh refinement and never fully converges, so it is
-  reported separately as K<sub>t</sub> rather than used to validate.
+  from the root. Neither peak stress is used to validate, and they misbehave for
+  different reasons: the fillet peak is a real concentration that converges
+  slowly and never fully settles, while the peak at the edge of a clamped washer
+  ring is a singularity with no finite value to converge to at all. The fillet
+  peak is reported as K<sub>t</sub>; the raw peak is reported and set aside.
 </div>
 {% endif %}
 
@@ -297,9 +299,10 @@ def _result_rows(summary, reference) -> list[dict]:
             "fe": _number(summary.tip_deflection, 5),
             "hand": f"{_number(reference.tip_deflection_beam, 5)} beam / "
             f"{_number(reference.tip_deflection_plate, 5)} plate",
-            "comment": f"FE/beam {deflection_ratio:.4f}. The plate bound uses "
-            "E/(1-&nu;&sup2;) and is the stiffer of the two; a wide section is "
-            "expected between them.",
+            "comment": f"FE/beam {deflection_ratio:.4f}. Both bounds assume a "
+            "rigid wall, so they are a floor the FE result must exceed rather "
+            "than a band it should sit in. The excess is the mounting plate "
+            "flexing between its bolts.",
         },
         {
             "quantity": f"Bending stress at s = {reference.section_position:.0f} mm (MPa)",
@@ -314,19 +317,39 @@ def _result_rows(summary, reference) -> list[dict]:
             "hand": _number(reference.total_load, 4),
             "comment": "Equilibrium: reactions must balance the applied load.",
         },
+        # The structural value comes first and carries K_t, because it is the
+        # one the verdict is made from. Printing the raw clamp peak here with
+        # the factor of safety derived from it put "FoS 1.142" beside a Pass
+        # against a target of 2.0, and paired K_t with a location it was not
+        # computed at.
         {
-            "quantity": "Peak von Mises (MPa)",
-            "fe": _number(summary.max_von_mises, 3),
+            "quantity": "Structural peak von Mises (MPa)",
+            "fe": _number(summary.max_von_mises_structural, 3),
             "hand": f"{_number(reference.root_stress, 3)} nominal at root",
             "comment": f"K<sub>t</sub> = {summary.stress_concentration:.3f} at "
-            f"x={summary.peak_location[0]:.2f}, y={summary.peak_location[1]:.2f}, "
-            f"z={summary.peak_location[2]:.2f} mm. Reported, not validated against.",
+            f"x={summary.structural_location[0]:.2f}, "
+            f"y={summary.structural_location[1]:.2f}, "
+            f"z={summary.structural_location[2]:.2f} mm, in the fillet. "
+            "Reported, not validated against: it is mesh dependent.",
+        },
+        {
+            "quantity": "Raw peak von Mises (MPa)",
+            "fe": _number(summary.max_von_mises, 3),
+            "hand": "-",
+            "comment": f"At x={summary.peak_location[0]:.2f}, "
+            f"y={summary.peak_location[1]:.2f}, z={summary.peak_location[2]:.2f} "
+            f"mm, within {summary.restraint_zone:.2f} mm of a clamped washer "
+            "edge. A restraint singularity: it rises without limit as the mesh "
+            "is refined, so it is <strong>set aside</strong> and the verdict "
+            "does not use it.",
         },
         {
             "quantity": "Factor of safety",
-            "fe": _number(summary.factor_of_safety_peak, 3),
+            "fe": _number(summary.factor_of_safety_structural, 3),
             "hand": "-",
-            "comment": f"On the peak stress. Away from the root it is "
+            "comment": "On the structural peak, which is what the verdict "
+            f"uses. On the raw peak it would be "
+            f"{summary.factor_of_safety_peak:.3f}; away from the root it is "
             f"{summary.factor_of_safety_section:.3f}.",
         },
     ]

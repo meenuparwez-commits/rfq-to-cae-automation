@@ -165,6 +165,51 @@ def test_a_result_stiffer_than_a_rigid_wall_fails(reference):
     assert "over-restrained" in result.message
 
 
+@pytest.mark.parametrize(
+    "factor, should_pass",
+    [
+        (1.00, True),    # exactly the bound
+        (0.99, True),    # inside the discretisation allowance
+        (0.97, False),   # just outside it
+        (0.90, False),   # 10% stiffer than a rigid wall: impossible
+    ],
+)
+def test_the_floor_sits_just_below_the_rigid_root_value(
+    reference, factor, should_pass
+):
+    """The band this check replaced allowed 15%, and that allowance was
+    inherited by mistake.
+
+    15% was sized for the gap between two analytical idealisations. Reused as a
+    floor it let a model 14% stiffer than a rigid wall pass, which is the exact
+    error the check exists to catch. These cases pin the edge so the allowance
+    cannot quietly grow again.
+    """
+    stiffest = min(reference.tip_deflection_plate, reference.tip_deflection_beam)
+
+    result = engineering_checks.check_tip_deflection(stiffest * factor, reference)
+
+    assert result.passed is should_pass
+
+
+def test_the_floor_cannot_separate_a_bolted_model_from_a_welded_one(reference):
+    """Stated as a test so the limitation cannot be forgotten.
+
+    On this geometry a fully fixed rear face deflects about 1.7% more than the
+    rigid-root bound, so it clears the floor. A deflection check simply cannot
+    separate two restraints of such similar stiffness, and claiming otherwise
+    would be the kind of false assurance this project exists to avoid. The
+    detected face area and the equation count are what catch a wrong restraint.
+    """
+    stiffest = min(reference.tip_deflection_plate, reference.tip_deflection_beam)
+
+    fully_fixed_like = stiffest * 1.017
+
+    assert engineering_checks.check_tip_deflection(
+        fully_fixed_like, reference
+    ).passed
+
+
 def test_a_very_flexible_result_still_passes_the_lower_bound(reference):
     """Deliberate: the check is one-sided.
 

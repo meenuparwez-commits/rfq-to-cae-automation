@@ -42,12 +42,30 @@ EQUILIBRIUM_REL_TOL = 0.01
 # used in the convergence study without ever tolerating a real error.
 SECTION_STRESS_REL_TOL = 0.05
 
-# Allowance either side of the beam/plate stiffness band. The band itself is a
-# physical statement (engineering decision 3): a wide section bends more like a
-# plate, which is stiffer by 1/(1-nu^2), so the FE deflection is expected
-# between the two. The allowance covers extra flexibility from the mounting
-# plate, which is not the rigid wall beam theory assumes.
-DEFLECTION_BAND_TOL = 0.15
+# How far below the rigid-root closed form the FE tip deflection may sit before
+# the model is called over-restrained.
+#
+# This replaced a two-sided band, and it inherited the band's 15% allowance,
+# which was wrong: 15% was sized for the gap between two ANALYTICAL
+# idealisations, and reusing it here punched a hole straight through the
+# physical statement the check now rests on. A model 14% stiffer than a rigid
+# wall - which is impossible - passed.
+#
+# The bound itself is exact: a support adds compliance and never removes it. So
+# the only thing this tolerance has to cover is DISCRETISATION. A displacement
+# formulation converges on the true answer from the stiff side, so a coarse
+# mesh deflects slightly too little. Measured across the convergence study the
+# tip deflection moves 0.45% then 0.17% between levels, so 2% leaves about four
+# times that scatter and is still 7.5x tighter than the value it replaces.
+#
+# BE CLEAR ABOUT WHAT THIS CANNOT CATCH. On the shipped geometry a fully fixed
+# rear face gives 0.51704 mm against a floor of 0.50844 - it passes, by 1.7%.
+# The two restraints are simply too close in stiffness for a deflection bound
+# to separate them. What this does catch is a restraint stiffer than a rigid
+# wall, which is unphysical and means the held region has grown into material
+# it should not touch. Telling a bolted model from a welded one is the job of
+# check_face_area and the equation count, not of this check.
+DEFLECTION_FLOOR_TOL = 0.02
 
 # A stress concentration below 1 would mean the peak is lower than the nominal
 # root stress, which is not physical for a filleted corner. Above this, the
@@ -240,7 +258,7 @@ def check_equilibrium(
 def check_tip_deflection(
     fe_deflection: float,
     reference: AnalyticalReference,
-    tol: float = DEFLECTION_BAND_TOL,
+    tol: float = DEFLECTION_FLOOR_TOL,
 ) -> CheckResult:
     """The rigid-root solutions are a LOWER BOUND on the FE tip deflection.
 
@@ -260,6 +278,12 @@ def check_tip_deflection(
     The excess over the bound is not an error to be minimised. It is the base
     flexibility, and it is reported as a compliance ratio because it is the
     single number that says how much the mounting is contributing.
+
+    The tolerance covers discretisation only, and the check is deliberately
+    weak at separating restraints of similar stiffness: on this geometry a
+    fully fixed rear face clears the floor by 1.7%. It catches a restraint
+    stiffer than a rigid wall, which is unphysical; the detected face area and
+    the equation count are what catch the wrong restraint.
     """
     plate_bound = reference.tip_deflection_plate
     beam_bound = reference.tip_deflection_beam

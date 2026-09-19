@@ -57,7 +57,20 @@ def sidebar_inputs(preset: dict) -> dict:
     Deliberately returns unvalidated values: the Pydantic schema is the single
     place that decides what is acceptable. Duplicating limits in the widgets
     would let the two definitions drift apart.
+
+    Every box starts on the shipped example. That is a pre-filled form, not a
+    silent default: the numbers are on screen, editable, and written into the
+    report and inputs.json for the run. The schema still defaults nothing
+    safety-critical, so a value missing from a JSON file or an API call fails
+    loudly rather than quietly becoming 220 N. The banner below exists so
+    nobody can mistake the example for their own design.
     """
+    st.sidebar.caption(
+        ":orange[**Pre-filled with the example design.**] Every box below is "
+        "the shipped demonstrator, not your part. Change each one to match "
+        "the bracket you mean to analyse."
+    )
+
     st.sidebar.header("Geometry (mm)")
     geometry = {
         "plate_height": st.sidebar.number_input(
