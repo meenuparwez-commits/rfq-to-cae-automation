@@ -104,7 +104,7 @@ TEMPLATE = Template(
 tonne/mm&sup3;, mass in kg</p>
 
 <div class="note">
-  <strong>Educational proof of concept.</strong> This report is produced by an
+  <strong>Demonstration project.</strong> This report is produced by an
   automated demonstration pipeline. Results require independent engineering
   verification and are not suitable for product release or safety certification.
 </div>
@@ -225,7 +225,7 @@ validated inputs. The files sit in the run folder:</p>
 </details>
 
 <footer>
-  Educational proof of concept. Synthetic geometry and original code.
+  Demonstration project. Synthetic geometry and original code.
   Results require independent engineering verification.
 </footer>
 

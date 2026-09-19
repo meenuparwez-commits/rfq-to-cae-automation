@@ -1,6 +1,6 @@
 # Limitations
 
-**This is an educational proof of concept.** It is not a certified or
+**This is a demonstration project.** It is not a certified or
 release-ready engineering tool. Every result it produces requires independent
 engineering verification and is not suitable for product release or safety
 certification.
@@ -15,7 +15,7 @@ is not a prediction of what the part does — it is a statement that the linear
 assumption has stopped being valid there.
 
 **Small displacements.** Geometry is not updated as the part deflects. Fine at
-0.59 mm on an 84 mm part; not fine for anything that visibly bends.
+1.11 mm on an 84 mm part; not fine for anything that visibly bends.
 
 **Static loading only.** No dynamics, no impact, no resonance.
 
@@ -72,22 +72,27 @@ which is why validation is done away from it.
 
 ## What the numbers mean, and do not mean
 
-**The peak stress is mesh dependent and is not used for validation.** It sits
-in the fillet stress concentration, where the mathematical stress rises as the
-mesh is refined. The convergence study shows it: between 1.5 mm and 1.25 mm
-elements the tip deflection settles to 0.04% while the peak von Mises is still
-climbing by about 1% per refinement, with no sign of stopping.
+**Neither peak stress is used for validation, and they misbehave for
+different reasons.** The convergence study shows all of it: between 1.5 mm and
+1.25 mm elements the tip deflection settles to 0.17% and the section stress to
+0.22%, while the fillet peak is still moving 0.44% and the peak at the clamped
+edge is moving **18%, and accelerating**.
+
+The fillet peak is a real stress concentration on real geometry, so it does
+have a finite answer — it just converges slowly. The clamp peak has no finite
+answer at all.
 
 Validation therefore uses two quantities that *do* settle:
 
-1. **Tip deflection** against beam theory, bounded by the beam modulus E and
-   the plate modulus E/(1−ν²)
+1. **Tip deflection** against the rigid-root bound, which a flexible mounting
+   can only exceed
 2. **Bending stress at a section away from the root**, where St Venant's
    principle applies
 
-The peak is reported separately as K_t = σ_FE,peak / σ_beam,root, with its
-location, so a peak sitting on the edge of the fixed face — a restraint
-singularity rather than a real feature — can be recognised as such.
+The fillet peak is reported separately as K_t = σ_FE,structural / σ_beam,root
+with its location, and the raw peak is reported beside it with its distance
+from the nearest clamped edge, so a singularity can be recognised as one rather
+than mistaken for a result.
 
 **A factor of safety here is a factor on first yield under a single static
 load.** It carries no allowance for fatigue, load uncertainty, material
@@ -104,7 +109,7 @@ It is **not** a manufacturing release. It carries no tolerances, no surface
 finish, no material specification beyond a name, no datums, no geometric
 dimensioning and tolerancing, no weld symbols, no revision control and no
 approval signatures. Every sheet is stamped
-`EDUCATIONAL DEMONSTRATOR - NOT FOR MANUFACTURE`.
+`DEMONSTRATION MODEL - NOT FOR MANUFACTURE`.
 
 ## Known software limitations
 

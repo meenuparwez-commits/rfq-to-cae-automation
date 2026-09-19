@@ -24,7 +24,7 @@ SOFTWARE.
 
 ADDITIONAL NOTICE
 
-This software is an educational proof of concept. It is not a certified or
+This software is a demonstration project. It is not a certified or
 release-ready engineering tool. Any result it produces requires independent
 engineering verification and is not suitable for product release or safety
 certification. See docs/limitations.md.

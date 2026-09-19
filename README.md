@@ -8,7 +8,7 @@ This project demonstrates a general engineering automation architecture
 applicable to configurable brackets, supports, enclosures and similar
 manufactured components.
 
-> **Educational proof of concept.** Not a certified or release-ready
+> **Demonstration project.** Not a certified or release-ready
 > engineering tool. Every result requires independent engineering verification
 > and is not suitable for product release or safety certification. See
 > [docs/limitations.md](docs/limitations.md).
@@ -206,7 +206,7 @@ under its washers — closer to a bolted joint than a fully fixed face, but stil
 a rigid clamp with **no bolt preload, no friction and no contact**, and it
 brings a **stress singularity at the edge of every clamped ring**. No fatigue,
 fracture, thermal loads, manufacturing tolerances or certification. The drawing carries no tolerances or GD&T and is stamped
-`EDUCATIONAL DEMONSTRATOR - NOT FOR MANUFACTURE`.
+`DEMONSTRATION MODEL - NOT FOR MANUFACTURE`.
 
 Full detail in [docs/limitations.md](docs/limitations.md).
 

@@ -41,7 +41,7 @@ class RunLogger:
             self._write_header()
 
     def _write_header(self) -> None:
-        self.info("Bracket CAD-to-CAE automation - educational proof of concept.")
+        self.info("Bracket CAD-to-CAE automation - demonstration project.")
         self.info("Results require independent engineering verification.")
         self.info("Units: mm, N, MPa (N/mm^2), tonne/mm^3, mass in kg.")
         self.info(f"Python {sys.version.split()[0]} on {platform.platform()}")

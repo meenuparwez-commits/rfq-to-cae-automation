@@ -22,7 +22,7 @@ projected geometry - bounding boxes, arc radii, circle centres - and then
 compared with the validated inputs, so the check actually exercises the CAD,
 the projection and the drawing together.
 
-This is a demonstrator. The sheet carries an "educational demonstrator" stamp
+This is a demonstrator. The sheet carries a "not for manufacture" stamp
 and is not a manufacturing release.
 """
 
@@ -70,7 +70,7 @@ LAYER_DIMENSIONS = "DIMENSIONS"
 LAYER_TEXT = "TEXT"
 LAYER_BORDER = "BORDER"
 
-STAMP = "EDUCATIONAL DEMONSTRATOR - NOT FOR MANUFACTURE"
+STAMP = "DEMONSTRATION MODEL - NOT FOR MANUFACTURE"
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,5 @@
 {
-  "_comment": "Generic textbook properties for common engineering materials. Units: youngs_modulus and yield_strength in MPa (N/mm^2), density in tonne/mm^3. Educational proof of concept - values are nominal and must not be used for design without checking against the relevant material certificate or standard.",
+  "_comment": "Generic textbook properties for common engineering materials. Units: youngs_modulus and yield_strength in MPa (N/mm^2), density in tonne/mm^3. Demonstration project - values are nominal and must not be used for design without checking against the relevant material certificate or standard.",
   "materials": {
     "structural_steel_s275": {
       "name": "Structural steel S275",

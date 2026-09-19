@@ -105,7 +105,7 @@ def write_input_deck(
 def _header(inputs: BracketInputs, material: Material) -> list[str]:
     return [
         "** Bracket linear-static analysis, generated automatically.",
-        "** Educational proof of concept: results require independent",
+        "** Demonstration project: results require independent",
         "** engineering verification before any use.",
         "**",
         "** Units: mm, N, MPa (N/mm^2), tonne/mm^3.",

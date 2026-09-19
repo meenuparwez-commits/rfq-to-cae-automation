@@ -592,7 +592,7 @@ def _summary_dict(inputs, material, mesh_stats, summary, reference, checks) -> d
     """Machine-readable record of one run."""
     return {
         "disclaimer": (
-            "Educational proof of concept. Results require independent "
+            "Demonstration project. Results require independent "
             "engineering verification and are not suitable for product release "
             "or safety certification."
         ),

@@ -1,6 +1,6 @@
 """Streamlit interface: enter a design, press one button, get a verdict.
 
-Educational proof of concept. Results require independent engineering
+Demonstration project. Results require independent engineering
 verification and are not suitable for product release or safety certification.
 
 Units throughout: mm, N, MPa (N/mm^2), tonne/mm^3, mass in kg.
@@ -300,7 +300,7 @@ def show_checks(outcome) -> None:
 def main() -> None:
     st.title("Parametric bracket: CAD to CAE")
     st.caption(
-        "Educational proof of concept. Linear elasticity; loads and restraints "
+        "Demonstration project. Linear elasticity; loads and restraints "
         "simplified; the plate is held only under its washers, with a rigid "
         "clamp and no bolt preload, friction or contact. "
         "Contact, bolt preload, fatigue, fracture, thermal loads, manufacturing "
