@@ -188,6 +188,11 @@ four figures.
 Linear elasticity must behave that way. Any deviation would have meant a
 nonlinearity or a load-dependent bug.
 
+*(Measured under the earlier fully-fixed restraint, which is why the numbers
+differ from the current baseline. The property still holds: the section stress
+error stays at 0.14% and the compliance ratio at 1.98 whether the load is
+250 N or 220 N.)*
+
 ### Why the baseline is 220 N
 
 At 250 N under the bolted restraint the design misses its own criterion by
