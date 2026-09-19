@@ -144,7 +144,7 @@ def show_sketch(inputs: BracketInputs, *, expanded: bool) -> None:
     type; collapsed afterwards so the verdict stays at the top of the page.
     """
     with st.expander("What the inputs mean", expanded=expanded):
-        st.image(sketch_svg(inputs), use_container_width=True)
+        st.image(sketch_svg(inputs), width="stretch")
         st.caption(
             "Redrawn from the sidebar as you change it. Green is the fixed "
             "rear face, red is the applied load. Note that **L is the free "
@@ -239,7 +239,7 @@ def show_images(outcome) -> None:
     ]
     for caption, path in pictures:
         if path is not None and path.is_file():
-            st.image(str(path), caption=caption, use_container_width=True)
+            st.image(str(path), caption=caption, width="stretch")
 
 
 def show_report_download(outcome) -> None:
