@@ -1,0 +1,16 @@
+{
+  "plate_height": 100.0,
+  "arm_length": 80.0,
+  "width": 60.0,
+  "thickness": 4.0,
+  "fillet_radius": 5.0,
+  "hole_diameter": 9.0,
+  "hole_spacing": 30.0,
+  "num_holes": 4,
+  "material": "structural_steel_s275",
+  "applied_load": 250.0,
+  "load_case": "tip_load",
+  "mesh_size": 1.5,
+  "target_factor_of_safety": 2.0,
+  "output_dir": "outputs"
+}

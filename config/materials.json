@@ -1,0 +1,33 @@
+{
+  "_comment": "Generic textbook properties for common engineering materials. Units: youngs_modulus and yield_strength in MPa (N/mm^2), density in tonne/mm^3. Educational proof of concept - values are nominal and must not be used for design without checking against the relevant material certificate or standard.",
+  "materials": {
+    "structural_steel_s275": {
+      "name": "Structural steel S275",
+      "youngs_modulus": 210000.0,
+      "poissons_ratio": 0.3,
+      "yield_strength": 275.0,
+      "density": 7.85e-9
+    },
+    "structural_steel_s355": {
+      "name": "Structural steel S355",
+      "youngs_modulus": 210000.0,
+      "poissons_ratio": 0.3,
+      "yield_strength": 355.0,
+      "density": 7.85e-9
+    },
+    "stainless_steel_304": {
+      "name": "Stainless steel 304",
+      "youngs_modulus": 193000.0,
+      "poissons_ratio": 0.29,
+      "yield_strength": 215.0,
+      "density": 8.0e-9
+    },
+    "aluminium_6061_t6": {
+      "name": "Aluminium 6061-T6",
+      "youngs_modulus": 68900.0,
+      "poissons_ratio": 0.33,
+      "yield_strength": 276.0,
+      "density": 2.7e-9
+    }
+  }
+}

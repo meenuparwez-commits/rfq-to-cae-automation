@@ -1,0 +1,12 @@
+# Streamlit settings for this project.
+
+[browser]
+# No usage statistics are sent. This is a local engineering tool.
+gatherUsageStats = false
+
+[server]
+# Uploads are not used; keep the limit small rather than the 200 MB default.
+maxUploadSize = 5
+
+[theme]
+base = "light"

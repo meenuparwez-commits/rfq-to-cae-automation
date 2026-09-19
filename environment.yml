@@ -1,0 +1,48 @@
+# Environment for the bracket CAD-to-CAE automation project.
+#
+# All packages come from conda-forge only, with strict channel priority.
+# Mixing channels is the usual cause of CadQuery/OCP and Gmsh DLL failures
+# on Windows: the packages install cleanly and then crash at import time.
+#
+# Create with:
+#   conda env create -f environment.yml
+#   conda run -n bracket-cae python -c "import cadquery, gmsh, pyvista"
+#
+# This file pins the packages that were explicitly requested. For an exact
+# rebuild of the original Windows environment, including every transitive
+# dependency, use environment.windows.lock.yml instead (Windows only).
+#
+# Note: CalculiX (ccx.exe) is NOT a conda package. It is installed separately
+# and located at run time through the CCX_PATH environment variable.
+
+name: bracket-cae
+
+channels:
+  - conda-forge
+
+dependencies:
+  # Interpreter
+  - python=3.11.16
+
+  # Geometry: CadQuery sits on the OCP/OpenCASCADE kernel
+  - cadquery=2.8.0
+
+  # Meshing: the gmsh binary plus its Python bindings
+  - gmsh=4.15.2
+  - python-gmsh=4.15.2
+
+  # Results handling and visualisation
+  - meshio=5.3.5
+  - pyvista=0.48.4
+  - vtk=9.6.1
+  - numpy=2.4.6
+
+  # Input validation (Pydantic v2 API is required)
+  - pydantic=2.13.5
+
+  # User interface and reporting
+  - streamlit=1.63.0
+  - jinja2=3.1.6
+
+  # Testing
+  - pytest=9.1.1

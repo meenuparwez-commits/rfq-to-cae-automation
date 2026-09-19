@@ -1,0 +1,19 @@
+# Normalise line endings so the repo is consistent regardless of platform.
+* text=auto eol=lf
+
+# Windows-only scripts need CRLF to run reliably.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary: never touch these.
+*.png binary
+*.pdf binary
+*.step binary
+*.stp binary
+*.msh binary
+*.frd binary
+*.vtu binary
+
+# Collapse generated and lock files in diffs and language statistics.
+environment.windows.lock.yml linguist-generated=true
+docs/images/* linguist-documentation=true

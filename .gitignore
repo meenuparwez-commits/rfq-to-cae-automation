@@ -1,0 +1,33 @@
+# Run artefacts: one folder per run, can grow large.
+# The C: drive on the development machine is nearly full, so these stay local.
+outputs/
+
+# CalculiX scratch files, in case a solver is ever run inside the project tree.
+*.frd
+*.dat
+*.cvg
+*.sta
+*.12d
+spooles.out
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+
+# Environments (the environment is defined by environment.yml, never committed)
+.venv/
+venv/
+
+# Editors and OS
+.vscode/
+.idea/
+
+# Local tooling config. launch.json needs an absolute path to conda on the
+# machine it was written on, so it is useless to anyone cloning the repo and
+# would publish the author's username for no benefit.
+.claude/
+Thumbs.db
+desktop.ini
