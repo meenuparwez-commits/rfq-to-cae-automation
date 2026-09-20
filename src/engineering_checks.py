@@ -381,9 +381,10 @@ def check_stress_concentration(
 ) -> CheckResult:
     """Report K_t, and flag an implausible one.
 
-    This is reported, not validated against. The peak sits in the fillet, where
-    the value depends on mesh refinement and never fully converges, which is
-    exactly why engineering decision 2 forbids validating on it.
+    This is reported, not validated against. The structural peak sits in the
+    fillet, where the value converges slowly enough to stay mesh dependent in
+    any practical mesh, which is exactly why engineering decision 2 forbids
+    validating on it.
 
     A K_t below 1 would mean the peak is under the nominal root stress, which a
     filleted corner cannot produce. A very high one usually means the peak has
