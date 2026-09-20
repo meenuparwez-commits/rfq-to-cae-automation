@@ -13,6 +13,16 @@ manufactured components.
 > and is not suitable for product release or safety certification. See
 > [docs/limitations.md](docs/limitations.md).
 
+> **About the name.** The repository is called `rfq-to-cae-automation` because
+> that is the shape of the problem it is built towards: an enquiry arrives,
+> and a checked analysis should come back without a person driving five tools
+> by hand. **The RFQ stage itself is not in this repository.** Reading a
+> written enquiry and turning it into validated parameters is the next step on
+> the roadmap, not something you will find in the code today. What *is* built,
+> tested and measured is everything downstream of that: parameters in,
+> geometry → drawing → mesh → solve → checks against hand calculations →
+> verdict → report. The parameters are entered in the app or supplied as JSON.
+
 Units throughout: mm, N, MPa (N/mm²), tonne/mm³ for density, mass in kg.
 
 ![Bracket deflecting under load, coloured by von Mises stress](docs/images/demo.gif)
