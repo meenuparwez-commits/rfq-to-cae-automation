@@ -412,8 +412,11 @@ def read_mesh(msh_path: str | Path) -> MeshData:
 
 # --- Checks ---------------------------------------------------------------
 #
-# CheckResult is shared with geometry_checks. If a third module needs it, it
-# should move to a common location rather than being duplicated.
+# CheckResult is defined in geometry_checks and imported by six modules:
+# boundary_detection, drawing, engineering_checks, mesh_generator, pipeline and
+# solver_runner. That is an accepted wart, not a plan - it belongs in a neutral
+# module, and moving it is broad import churn that has not been worth doing
+# against the remaining work.
 
 
 def check_element_type(stats: MeshStats) -> CheckResult:

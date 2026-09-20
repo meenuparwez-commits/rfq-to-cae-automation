@@ -2,9 +2,9 @@
 
 Units: mm, N, MPa.
 
-The alternative was putting the sequence in app.py, which would make the
+The alternative was putting the sequence inside app.py, which would make the
 alternative was putting the sequence inside app.py, which would make the whole
-pipeline untestable without starting Streamlit, and would force the
+whole pipeline untestable without starting Streamlit, and would force the
 report generator to duplicate it. The UI stays a thin layer over this.
 
 Every stage is wrapped so a failure produces a human-readable reason and a Fail
@@ -612,15 +612,40 @@ def _summary_dict(inputs, material, mesh_stats, summary, reference, checks) -> d
             "min_quality": mesh_stats.min_quality,
             "mean_edge_length": mesh_stats.mean_edge_length,
         },
+        # The structural values come first and are named unambiguously,
+        # because this file is what other software reads. Publishing only the
+        # raw clamp singularity meant a machine could see a failing stress and
+        # a factor of safety of 1.14 beside 22 passing checks, and would have
+        # to parse English out of the check messages to find the numbers the
+        # verdict was actually made from.
+        #
+        # The old keys are kept and now say plainly which peak they hold, so
+        # anything already reading them keeps working rather than silently
+        # changing meaning.
         "results": {
             "max_displacement_mm": summary.max_displacement,
             "tip_deflection_mm": summary.tip_deflection,
-            "max_von_mises_mpa": summary.max_von_mises,
-            "peak_location_mm": list(summary.peak_location),
+            "max_von_mises_structural_mpa": summary.max_von_mises_structural,
+            "structural_peak_location_mm": list(summary.structural_location),
+            "factor_of_safety_structural": summary.factor_of_safety_structural,
+            "verdict_uses": "factor_of_safety_structural",
+            "max_von_mises_raw_mpa": summary.max_von_mises,
+            "raw_peak_location_mm": list(summary.peak_location),
+            "factor_of_safety_raw": summary.factor_of_safety_peak,
+            "restraint_zone_mm": summary.restraint_zone,
+            "raw_peak_note": (
+                "The raw peak sits within restraint_zone_mm of a clamped "
+                "washer edge. It is a restraint singularity: it rises without "
+                "limit as the mesh is refined, so it is reported and never "
+                "used for the verdict."
+            ),
             "reactions_n": [float(value) for value in summary.reactions],
             "stress_concentration_kt": summary.stress_concentration,
-            "factor_of_safety_peak": summary.factor_of_safety_peak,
             "factor_of_safety_section": summary.factor_of_safety_section,
+            # Retained for compatibility; both hold the RAW peak.
+            "max_von_mises_mpa": summary.max_von_mises,
+            "peak_location_mm": list(summary.peak_location),
+            "factor_of_safety_peak": summary.factor_of_safety_peak,
         },
         "analytical": {
             "second_moment_mm4": reference.second_moment,

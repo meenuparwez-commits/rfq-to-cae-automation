@@ -149,7 +149,7 @@ end a run:
 
 ## Testing
 
-435 tests, about a minute. One test file per module.
+436 tests, about a minute. One test file per module.
 
 Every check has a matching test that proves it can **fail**. A check that has
 only ever passed is not evidence of anything — and three real bugs were caught

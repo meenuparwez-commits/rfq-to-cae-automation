@@ -25,8 +25,52 @@ from src.pipeline import run_pipeline
 from src.schemas import BracketInputs, LoadCase, load_materials
 from src.sketch import sketch_svg
 
-DEFAULTS_PATH = Path("config/default_inputs.json")
+EXAMPLE_PATH = Path("config/default_inputs.json")
 OUTPUT_ROOT = Path("outputs/app_run")
+
+# Every input that decides what is analysed. None of these may arrive by
+# default: the hard rule is that a missing safety-critical value fails with a
+# clear message rather than quietly becoming the demonstrator's.
+#
+# An earlier version pre-filled all of them from the example file and argued
+# that a visible value is not a silent one. An audit disagreed, and was right:
+# the run button was live before the user had typed anything, so the example
+# could be analysed in the belief it was their part. The defence also rested on
+# a wrong claim, that a Streamlit number_input has no empty state. It does -
+# value=None, and index=None for a selectbox.
+REQUIRED_FIELDS = (
+    "plate_height",
+    "arm_length",
+    "width",
+    "thickness",
+    "fillet_radius",
+    "hole_diameter",
+    "hole_spacing",
+    "num_holes",
+    "washer_diameter",
+    "material",
+    "applied_load",
+    "load_case",
+    "mesh_size",
+    "target_factor_of_safety",
+)
+
+FIELD_LABELS = {
+    "plate_height": "plate height H",
+    "arm_length": "arm length L",
+    "width": "width b",
+    "thickness": "thickness t",
+    "fillet_radius": "fillet radius r",
+    "hole_diameter": "hole diameter",
+    "hole_spacing": "hole spacing",
+    "num_holes": "number of holes",
+    "washer_diameter": "washer diameter",
+    "material": "material",
+    "applied_load": "applied load F",
+    "load_case": "load case",
+    "mesh_size": "element size",
+    "target_factor_of_safety": "target factor of safety",
+}
 
 VERDICT_STYLE = {
     Verdict.PASS: ("✅", "success"),
@@ -45,117 +89,125 @@ def material_options() -> dict[str, str]:
 
 
 @st.cache_data
-def defaults() -> dict:
+def example_design() -> dict:
+    """The shipped demonstrator. Loaded only when the user asks for it."""
     import json
 
-    return json.loads(DEFAULTS_PATH.read_text(encoding="utf-8"))
+    return json.loads(EXAMPLE_PATH.read_text(encoding="utf-8"))
 
 
-def sidebar_inputs(preset: dict) -> dict:
+def example_button() -> None:
+    """Fill the form with the demonstrator, as a deliberate action.
+
+    Rendered before the widgets, because Streamlit refuses a session_state
+    write to a key whose widget already exists in this run.
+    """
+    if st.sidebar.button(
+        "Load the example design",
+        help="Fills every box with the shipped demonstrator so you can see a "
+        "complete run. It is not your part: change the values afterwards.",
+        use_container_width=True,
+    ):
+        for key, value in example_design().items():
+            if key in REQUIRED_FIELDS:
+                st.session_state[key] = value
+        st.rerun()
+
+
+def missing_fields(raw: dict) -> list[str]:
+    return [name for name in REQUIRED_FIELDS if raw.get(name) is None]
+
+
+def sidebar_inputs() -> dict:
     """Collect the design inputs. Returns a raw dict for the schema to judge.
 
-    Deliberately returns unvalidated values: the Pydantic schema is the single
-    place that decides what is acceptable. Duplicating limits in the widgets
-    would let the two definitions drift apart.
+    Every safety-critical box starts EMPTY. Nothing is analysed until the user
+    has entered it or has deliberately pressed "Load the example design", so a
+    value that is never supplied cannot quietly become the demonstrator's.
 
-    Every box starts on the shipped example. That is a pre-filled form, not a
-    silent default: the numbers are on screen, editable, and written into the
-    report and inputs.json for the run. The schema still defaults nothing
-    safety-critical, so a value missing from a JSON file or an API call fails
-    loudly rather than quietly becoming 220 N. The banner below exists so
-    nobody can mistake the example for their own design.
+    Values are otherwise unvalidated on purpose: the Pydantic schema is the
+    single place that decides what is acceptable, and duplicating its limits in
+    the widgets would let the two definitions drift apart.
+
+    Each widget owns its value through `key`, with no `value=` argument, so
+    session_state is the only source and the example button can write to it.
     """
-    st.sidebar.caption(
-        ":orange[**Pre-filled with the example design.**] Every box below is "
-        "the shipped demonstrator, not your part. Change each one to match "
-        "the bracket you mean to analyse."
-    )
+    example_button()
+
+    # number_input defaults to value='min', NOT None, so a box with no
+    # min_value quietly starts at zero rather than empty. Seeding the state
+    # explicitly is what actually leaves them blank; the widgets below then
+    # take their value from session_state and carry no `value=` of their own.
+    for name in REQUIRED_FIELDS:
+        st.session_state.setdefault(name, None)
 
     st.sidebar.header("Geometry (mm)")
-    geometry = {
-        "plate_height": st.sidebar.number_input(
-            "Plate height H", value=float(preset["plate_height"]), step=5.0
-        ),
-        "arm_length": st.sidebar.number_input(
-            "Arm length L (free, from plate face)",
-            value=float(preset["arm_length"]),
-            step=5.0,
-        ),
-        "width": st.sidebar.number_input(
-            "Width b", value=float(preset["width"]), step=5.0
-        ),
-        "thickness": st.sidebar.number_input(
-            "Thickness t", value=float(preset["thickness"]), step=0.5
-        ),
-        "fillet_radius": st.sidebar.number_input(
-            "Inside fillet radius r", value=float(preset["fillet_radius"]), step=0.5
-        ),
-    }
+    st.sidebar.number_input("Plate height H", step=5.0, key="plate_height")
+    st.sidebar.number_input(
+        "Arm length L (free, from plate face)", step=5.0, key="arm_length"
+    )
+    st.sidebar.number_input("Width b", step=5.0, key="width")
+    st.sidebar.number_input("Thickness t", step=0.5, key="thickness")
+    st.sidebar.number_input("Inside fillet radius r", step=0.5, key="fillet_radius")
 
     st.sidebar.header("Holes")
-    holes = {
-        "hole_diameter": st.sidebar.number_input(
-            "Hole diameter", value=float(preset["hole_diameter"]), step=0.5
-        ),
-        "hole_spacing": st.sidebar.number_input(
-            "Hole spacing (centre to centre)",
-            value=float(preset["hole_spacing"]),
-            step=1.0,
-        ),
-        "num_holes": st.sidebar.selectbox(
-            "Number of holes",
-            options=[2, 4],
-            index=[2, 4].index(int(preset["num_holes"])),
-        ),
-        "washer_diameter": st.sidebar.number_input(
-            "Washer diameter (clamped ring)",
-            value=float(preset["washer_diameter"]),
-            step=1.0,
-            help="The bolts hold the plate only under their washers. This "
-            "outside diameter is the whole restraint, so it changes the "
-            "stiffness and the stresses, not just the drawing.",
-        ),
-    }
+    st.sidebar.number_input("Hole diameter", step=0.5, key="hole_diameter")
+    st.sidebar.number_input(
+        "Hole spacing (centre to centre)", step=1.0, key="hole_spacing"
+    )
+    st.sidebar.selectbox(
+        "Number of holes",
+        options=[2, 4],
+        index=None,
+        placeholder="Choose 2 or 4",
+        key="num_holes",
+    )
+    st.sidebar.number_input(
+        "Washer diameter (clamped ring)",
+        step=1.0,
+        key="washer_diameter",
+        help="The bolts hold the plate only under their washers. This outside "
+        "diameter is the whole restraint, so it changes the stiffness and the "
+        "stresses, not just the drawing.",
+    )
 
     st.sidebar.header("Load and material")
     options = material_options()
-    keys = list(options)
-    analysis = {
-        "material": st.sidebar.selectbox(
-            "Material",
-            options=keys,
-            index=keys.index(preset["material"]),
-            format_func=lambda key: options[key],
-        ),
-        "applied_load": st.sidebar.number_input(
-            "Applied load F (N)", value=float(preset["applied_load"]), step=50.0
-        ),
-        "load_case": st.sidebar.selectbox(
-            "Load case",
-            options=[case.value for case in LoadCase],
-            index=[case.value for case in LoadCase].index(preset["load_case"]),
-            help="Tip load acts on the end face; UDL is spread over the top of "
-            "the arm. The analytical comparison follows whichever is chosen.",
-        ),
-        "target_factor_of_safety": st.sidebar.number_input(
-            "Target factor of safety",
-            value=float(preset["target_factor_of_safety"]),
-            step=0.25,
-        ),
-    }
+    st.sidebar.selectbox(
+        "Material",
+        options=list(options),
+        index=None,
+        placeholder="Choose a material",
+        format_func=lambda key: options[key],
+        key="material",
+    )
+    st.sidebar.number_input("Applied load F (N)", step=50.0, key="applied_load")
+    st.sidebar.selectbox(
+        "Load case",
+        options=[case.value for case in LoadCase],
+        index=None,
+        placeholder="Choose a load case",
+        key="load_case",
+        help="Tip load acts on the end face; UDL is spread over the top of the "
+        "arm. The analytical comparison follows whichever is chosen.",
+    )
+    st.sidebar.number_input(
+        "Target factor of safety", step=0.25, key="target_factor_of_safety"
+    )
 
     st.sidebar.header("Mesh")
-    mesh = {
-        "mesh_size": st.sidebar.number_input(
-            "Element size (mm)",
-            value=float(preset["mesh_size"]),
-            step=0.25,
-            help="At least two elements through the thickness are needed, so "
-            "aim below t/2. A coarse mesh overestimates stiffness.",
-        )
-    }
+    st.sidebar.number_input(
+        "Element size (mm)",
+        step=0.25,
+        key="mesh_size",
+        help="At least two elements through the thickness are needed, so aim "
+        "below t/2. A coarse mesh overestimates stiffness.",
+    )
 
-    return {**geometry, **holes, **analysis, **mesh, "output_dir": str(OUTPUT_ROOT)}
+    raw = {name: st.session_state.get(name) for name in REQUIRED_FIELDS}
+    raw["output_dir"] = str(OUTPUT_ROOT)
+
+    return raw
 
 
 def show_sketch(inputs: BracketInputs, *, expanded: bool) -> None:
@@ -296,6 +348,23 @@ def show_report_download(outcome) -> None:
     )
 
 
+def show_example_sketch() -> None:
+    """The shipped example's sketch, when the user's own cannot be drawn.
+
+    Someone who has just been told their design is impossible, or has not
+    filled the form yet, is exactly the person who needs to see what each
+    dimension means. The caption says whose design it is, every time.
+    """
+    try:
+        st.caption(
+            "The **example** design below, so you can see what each input "
+            "means. These are not your values."
+        )
+        show_sketch(BracketInputs(**example_design()), expanded=True)
+    except ValidationError:
+        pass
+
+
 def show_checks(outcome) -> None:
     st.subheader(f"Checks ({sum(c.passed for c in outcome.checks)}/{len(outcome.checks)} passed)")
     st.table(
@@ -322,7 +391,23 @@ def main() -> None:
         "release or safety certification. Units: mm, N, MPa."
     )
 
-    raw = sidebar_inputs(defaults())
+    raw = sidebar_inputs()
+
+    # Nothing is offered to run until every safety-critical value has been
+    # supplied. Incomplete is kept separate from invalid: one is "you have not
+    # told me yet", the other is "what you told me cannot be built", and
+    # merging them would make the second message useless.
+    missing = missing_fields(raw)
+    if missing:
+        st.info(
+            "**Enter the design in the sidebar.** These are still empty: "
+            + ", ".join(FIELD_LABELS[name] for name in missing)
+            + ". Nothing is assumed for you — there is no default load, "
+            "material or dimension. If you only want to see a complete run, "
+            "press **Load the example design** in the sidebar."
+        )
+        show_example_sketch()
+        return
 
     try:
         inputs = BracketInputs(**raw)
@@ -335,15 +420,7 @@ def main() -> None:
             "so an impossible design fails here with a reason rather than deep "
             "inside the CAD kernel."
         )
-        # The sketch cannot be drawn from inputs that were rejected, so the
-        # shipped example stands in: the point here is to show what each
-        # dimension means, which is usually what the reader needs after a
-        # rejection.
-        try:
-            st.caption("The example design, for reference — not your inputs:")
-            show_sketch(BracketInputs(**defaults()), expanded=True)
-        except ValidationError:
-            pass
+        show_example_sketch()
         return
 
     for note in inputs.warnings():

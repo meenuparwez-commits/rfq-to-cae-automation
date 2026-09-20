@@ -12,11 +12,19 @@ A solve that finishes proves neither. This project never claims validation
 because the solver returned, so every check below compares against something
 computed independently.
 
-Engineering decision 2 governs what is validated: NOT the peak stress. The peak
-sits in the fillet stress concentration, where the value depends on mesh
-refinement and never fully converges. Validation uses tip deflection and
-bending stress at a section away from the root; the peak is reported separately
-as K_t = sigma_FE,peak / sigma_beam,root.
+Engineering decision 2 governs what is validated: NOT either peak stress, and
+the two misbehave for different reasons.
+
+The FILLET peak is a real stress concentration on real geometry, so it has a
+finite answer and does converge - just slowly, 2.78% then 0.44% across the
+convergence study. The peak at the EDGE OF A CLAMPED WASHER RING does not
+converge at all: restraining a sharp-edged region of a continuum has no finite
+value to converge to, and refining the mesh raises it for ever.
+
+Validation therefore uses tip deflection and bending stress at a section away
+from the root, both of which settle. The fillet peak is reported as
+K_t = sigma_FE,structural / sigma_beam,root, and the raw peak is reported and
+set aside.
 """
 
 from __future__ import annotations

@@ -204,9 +204,18 @@ def test_report_says_the_peak_is_not_used_for_validation(inputs, reference, tmp_
     """Engineering decision 2, stated where a reader will see it."""
     html = report_generator.build_report(make_outcome(inputs, reference, tmp_path))
 
-    assert "not validated against" in html
-    assert "never fully settles" in html      # the fillet peak
-    assert "no finite value to converge to" in html  # the clamp singularity
+    # Whitespace is normalised so the assertions survive the template being
+    # rewrapped; a phrase that happens to straddle a line break is not a
+    # finding about the report.
+    flat = " ".join(html.split())
+
+    assert "not validated against" in flat
+    # The two peaks must be described differently. An earlier version of this
+    # test pinned "never fully converges" for both, which is wrong about the
+    # fillet and was quietly holding the incorrect wording in place.
+    assert "converges slowly" in flat                       # the fillet peak
+    assert "no finite value to converge to at all" in flat  # the clamp edge
+    assert "never fully converges" not in flat
 
 
 def test_checks_are_tabulated_with_their_severity(inputs, reference, tmp_path):

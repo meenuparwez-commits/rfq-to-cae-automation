@@ -48,8 +48,10 @@ LIMITATIONS = [
     "the highest stress outside that zone.",
     "Contact, bolt preload, fatigue, fracture, thermal loads, manufacturing "
     "tolerances and certification are outside the scope of this version.",
-    "The peak stress sits in the fillet stress concentration and is mesh "
-    "dependent. It is reported, not used for validation.",
+    "Two peak stresses are reported and neither is used for validation. The "
+    "fillet peak is a real stress concentration: it converges, but slowly, so "
+    "it stays mesh dependent. The peak at the edge of a clamped washer ring "
+    "does not converge at all, and rises without limit as the mesh is refined.",
     "Not suitable for product release or safety certification.",
 ]
 
@@ -146,10 +148,11 @@ tonne/mm&sup3;, mass in kg</p>
 <div class="note">
   Validation follows the tip deflection and the bending stress at a section away
   from the root. Neither peak stress is used to validate, and they misbehave for
-  different reasons: the fillet peak is a real concentration that converges
-  slowly and never fully settles, while the peak at the edge of a clamped washer
-  ring is a singularity with no finite value to converge to at all. The fillet
-  peak is reported as K<sub>t</sub>; the raw peak is reported and set aside.
+  different reasons: the fillet peak is a real concentration that
+  <strong>converges slowly</strong>, so it remains mesh dependent, while the peak
+  at the edge of a clamped washer ring has <strong>no finite value to converge
+  to at all</strong>. The fillet peak is reported as K<sub>t</sub>; the raw peak
+  is reported and set aside.
 </div>
 {% endif %}
 

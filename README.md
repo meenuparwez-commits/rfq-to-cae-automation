@@ -45,7 +45,7 @@ dimensions against the projected geometry.
 | **Solver** | CalculiX, linear static |
 | **Interface** | Streamlit |
 | **Report** | Self-contained HTML, images embedded |
-| **Tests** | 435, one file per module |
+| **Tests** | 436, one file per module |
 
 ![Dimensioned sketch of the input parameters](docs/images/inputs-sketch.svg)
 

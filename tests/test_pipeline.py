@@ -126,6 +126,41 @@ def test_summary_json_records_units_and_the_disclaimer(coarse_run):
     assert len(summary["checks"]) == len(coarse_run.checks)
 
 
+def test_summary_json_carries_the_verdict_driving_values(coarse_run):
+    """Other software reads this file, and it must not have to parse prose.
+
+    It previously published only the raw clamp singularity, so a machine could
+    see a stress of 240 MPa and a factor of safety of 1.14 beside a passing
+    run, with the structural numbers available nowhere but inside English
+    check messages. Same defect class as the report, one artefact further out.
+    """
+    summary = json.loads(coarse_run.artifacts.summary.read_text(encoding="utf-8"))
+    results = summary["results"]
+    expected = coarse_run.summary
+
+    assert results["factor_of_safety_structural"] == pytest.approx(
+        expected.factor_of_safety_structural
+    )
+    assert results["max_von_mises_structural_mpa"] == pytest.approx(
+        expected.max_von_mises_structural
+    )
+    assert results["factor_of_safety_raw"] == pytest.approx(
+        expected.factor_of_safety_peak
+    )
+
+    # The file must say which number the verdict was made from, rather than
+    # leaving a reader to guess between two factors of safety.
+    assert results["verdict_uses"] == "factor_of_safety_structural"
+    assert "singularity" in results["raw_peak_note"]
+
+    # The retained keys hold the raw peak. Their meaning is fixed, so anything
+    # already reading them keeps working instead of silently changing.
+    assert results["max_von_mises_mpa"] == pytest.approx(expected.max_von_mises)
+    assert results["factor_of_safety_peak"] == pytest.approx(
+        expected.factor_of_safety_peak
+    )
+
+
 def test_the_log_file_holds_the_run(coarse_run):
     text = coarse_run.artifacts.log.read_text(encoding="utf-8")
 
